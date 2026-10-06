@@ -1,0 +1,7 @@
+node_modules
+dist
+.wrangler
+migrations
+package-lock.json
+BUILD_PLAN.md
+idea.txt

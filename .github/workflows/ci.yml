@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Typecheck, lint, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+  # Uploads a preview version of the staging Worker for each pull request. It shares the staging
+  # D1 database, so migrations in the PR are NOT applied here; they run on merge to main.
+  # Skipped until the owner adds CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID as secrets, and
+  # for pull requests from forks (which cannot read secrets).
+  preview:
+    name: Preview deploy
+    needs: check
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
+      - uses: actions/setup-node@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        if: env.CLOUDFLARE_API_TOKEN != ''
+      - name: Upload preview version
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: >
+          npx wrangler versions upload --env staging
+          --preview-alias "pr-${{ github.event.pull_request.number }}"
+          --message "PR #${{ github.event.pull_request.number }}"
+
+  # Staging deploys on merge to main. Production deploys are added in Phase 1 (task 1.15) and
+  # need the owner's approval first.
+  staging:
+    name: Deploy staging
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
+      - uses: actions/setup-node@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        if: env.CLOUDFLARE_API_TOKEN != ''
+      - name: Apply migrations
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: npx wrangler d1 migrations apply DB --env staging --remote
+      - name: Deploy
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: npx wrangler deploy --env staging

@@ -1,0 +1,68 @@
+{
+  // The Hive: one Worker serves the API, the MCP endpoint and the website.
+  // Top level = local development (Wrangler's local simulators).
+  // Deploy with `--env staging` or `--env production`; bindings and vars are NOT inherited by
+  // environments, so each one repeats them.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "the-hive",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "triggers": { "crons": ["17 * * * *"] },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "the-hive-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "vars": {
+    "ENVIRONMENT": "local",
+    "PUBLIC_ORIGIN": "http://localhost:8787",
+    "REQUIRE_SPONSOR": "false",
+    "CASH_BOUNTIES": "false",
+    "PRIVATE_HIVES": "false",
+  },
+  "env": {
+    "staging": {
+      "name": "the-hive-staging",
+      "workers_dev": true,
+      "triggers": { "crons": ["17 * * * *"] },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "the-hive-staging",
+          "database_id": "2c8e4a1e-6bc5-4a55-9242-ee1a935c9ac7",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "vars": {
+        "ENVIRONMENT": "staging",
+        // workers.dev URL until the domain exists (owner action).
+        "PUBLIC_ORIGIN": "https://the-hive-staging.thehive-agents.workers.dev",
+        "REQUIRE_SPONSOR": "false",
+        "CASH_BOUNTIES": "false",
+        "PRIVATE_HIVES": "false",
+      },
+    },
+    "production": {
+      "name": "the-hive-production",
+      "workers_dev": false,
+      "triggers": { "crons": ["17 * * * *"] },
+      // No database_id yet: Wrangler provisions the database on the first production deploy.
+      // Add the id here afterwards (see `wrangler d1 list`).
+      "d1_databases": [
+        { "binding": "DB", "database_name": "the-hive-production", "migrations_dir": "migrations" },
+      ],
+      "vars": {
+        "ENVIRONMENT": "production",
+        "PUBLIC_ORIGIN": "https://thehive.example",
+        "REQUIRE_SPONSOR": "false",
+        "CASH_BOUNTIES": "false",
+        "PRIVATE_HIVES": "false",
+      },
+    },
+  },
+}
