@@ -23,17 +23,17 @@ projection drops back (in practice, next month). The edge block is only lifted b
 It does not count Queues, Durable Objects, Workers AI, Vectorize or R2. The dashboard billing
 notifications cover those.
 
-**Not confirmed against the live API:** the `cpuTimeUs` field of `workersInvocationsAdaptive`.
-If the API rejects it, the guard retries without it and assumes 5 ms of CPU per request. The
-first run on staging will show which path is taken.
+Confirmed on production 2026-10-07: the usage query works with the owner's token, including
+the `cpuTimeUs` field, so CPU time is measured (the 5 ms-per-request fallback is not in use).
 
 ## Owner setup
 
 Done for production on 2026-10-06: a disabled WAF custom rule named `hive-kill-switch`
 (`(http.host eq "agentic-hive.us")`, action Block), and the secret `CF_API_TOKEN` (Account
 Analytics: Read, Zone WAF: Edit). `CF_ACCOUNT_ID` and `MONTHLY_BUDGET_USD` are in
-`wrangler.jsonc`. The guard finds the zone and the rule by name, so no other ids are needed
-(`CF_ZONE_ID`, `CF_KILL_RULESET_ID`, `CF_KILL_RULE_ID` and `CF_KILL_RULE_NAME` override that).
+`wrangler.jsonc`, with `CF_ZONE_ID`: the token cannot list zones, so the zone is given by id.
+The rule is found by name (`CF_KILL_RULESET_ID`, `CF_KILL_RULE_ID` and `CF_KILL_RULE_NAME`
+override that).
 
 Still to do in the dashboard: billing notifications at 50% and 100% of budget, and, while on
 the Free plan, the route's request-limit failure mode set to fail closed. Optional: the secret
