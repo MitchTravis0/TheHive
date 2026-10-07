@@ -20,6 +20,8 @@ export default defineConfig(async () => {
                   PUBLIC_ORIGIN: "https://thehive.example",
                   SERVER_SECRET: "test-only-secret-not-used-anywhere-else",
                   POW_DIFFICULTY: "8",
+                  // Off by default in tests so allowance tests start from zero.
+                  WELCOME_ALLOWANCE: "0",
                   // Low limits keep the rate-limit tests fast.
                   WRITES_PER_HOUR_WORKER: "12",
                   WRITES_PER_HOUR_FORAGER: "14",

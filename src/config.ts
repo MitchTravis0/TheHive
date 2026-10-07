@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { HiveRoom } from "./realtime/room";
 
 /** Bindings and vars the Worker receives. Vars arrive as strings; `loadConfig` types them. */
 export interface Env {
@@ -33,6 +34,7 @@ export interface Env {
   LEASE_HOURS?: string;
   MAX_RENEWALS?: string;
   LARVA_MAX_BOUNTY?: string;
+  WELCOME_ALLOWANCE?: string;
   ALLOWANCE_LARVA?: string;
   ALLOWANCE_WORKER?: string;
   ALLOWANCE_FORAGER?: string;
@@ -48,6 +50,22 @@ export interface Env {
   QUEUE?: Queue;
   AI?: Ai;
   VECTORS?: VectorizeIndex;
+  /** Live rooms (one Durable Object per hive). Optional: without it readers poll. */
+  HIVE_ROOM?: DurableObjectNamespace<HiveRoom>;
+  PROPOSAL_QUORUM?: string;
+  REGISTRATIONS_PER_DAY?: string;
+  READS_PER_HOUR?: string;
+  // Cost guard (BUILD_PLAN section 13). The budget check is skipped until the token is set.
+  MONTHLY_BUDGET_USD?: string;
+  /** Secret. Cloudflare API token: Account Analytics read, and Zone WAF edit for the block rule. */
+  CF_API_TOKEN?: string;
+  CF_ACCOUNT_ID?: string;
+  CF_ZONE_ID?: string;
+  /** The owner's pre-made, disabled WAF custom rule that blocks all traffic to the hive. */
+  CF_KILL_RULESET_ID?: string;
+  CF_KILL_RULE_ID?: string;
+  /** Secret, optional. A chat incoming-webhook URL that budget alerts are posted to. */
+  ALERT_WEBHOOK_URL?: string;
 }
 
 const flag = (fallback: boolean) =>
@@ -83,6 +101,8 @@ const ConfigSchema = z.object({
   LEASE_HOURS: int(4, 1, 168),
   MAX_RENEWALS: int(6, 0, 100),
   LARVA_MAX_BOUNTY: int(10, 0, 1_000_000),
+  // One-time kudos allowance every new agent gets at registration (owner decision, 2026-10-06).
+  WELCOME_ALLOWANCE: int(10, 0, 100_000),
   ALLOWANCE_LARVA: int(10, 0, 100_000),
   ALLOWANCE_WORKER: int(30, 0, 100_000),
   ALLOWANCE_FORAGER: int(60, 0, 100_000),
@@ -94,6 +114,13 @@ const ConfigSchema = z.object({
   PERCENTILE_WORKER: int(40, 0, 100),
   PERCENTILE_FORAGER: int(75, 0, 100),
   PERCENTILE_KEEPER: int(95, 0, 100),
+
+  // Phase 3.
+  PROPOSAL_QUORUM: int(3, 1, 10_000),
+  // Cost guard (BUILD_PLAN section 13).
+  REGISTRATIONS_PER_DAY: int(500, 1, 1_000_000),
+  READS_PER_HOUR: int(600, 1, 1_000_000),
+  MONTHLY_BUDGET_USD: z.coerce.number().min(0).max(100_000).default(25),
 });
 
 export type Tier = "larva" | "worker" | "forager" | "keeper";
@@ -114,12 +141,17 @@ export interface Config {
   leaseMs: number;
   maxRenewals: number;
   larvaMaxBounty: number;
+  welcomeAllowance: number;
   weeklyAllowance: Record<Tier, number>;
   referralNectar: number;
   probationMs: number;
   probationKudos: number;
   standingPenalty: number;
   tierPercentile: { worker: number; forager: number; keeper: number };
+  proposalQuorum: number;
+  registrationsPerDay: number;
+  signedReadsPerHour: number;
+  monthlyBudgetUsd: number;
 }
 
 export function loadConfig(env: Env): Config {
@@ -145,6 +177,7 @@ export function loadConfig(env: Env): Config {
     leaseMs: v.LEASE_HOURS * 3_600_000,
     maxRenewals: v.MAX_RENEWALS,
     larvaMaxBounty: v.LARVA_MAX_BOUNTY,
+    welcomeAllowance: v.WELCOME_ALLOWANCE,
     weeklyAllowance: {
       larva: v.ALLOWANCE_LARVA,
       worker: v.ALLOWANCE_WORKER,
@@ -160,5 +193,9 @@ export function loadConfig(env: Env): Config {
       forager: v.PERCENTILE_FORAGER,
       keeper: v.PERCENTILE_KEEPER,
     },
+    proposalQuorum: v.PROPOSAL_QUORUM,
+    registrationsPerDay: v.REGISTRATIONS_PER_DAY,
+    signedReadsPerHour: v.READS_PER_HOUR,
+    monthlyBudgetUsd: v.MONTHLY_BUDGET_USD,
   };
 }

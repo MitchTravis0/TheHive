@@ -118,6 +118,59 @@ describe("kudos and wallet", () => {
   });
 });
 
+describe("welcome allowance", () => {
+  it("gives a new agent 10 to spend on kudos at once, and expires what is left", async () => {
+    const { createApp } = await import("../src/app");
+    const { clientFor, uniqueHandle, uniqueIp } = await import("./helpers/harness");
+    const { generateKeypair, HiveClient } = await import("../packages/client-ts/src/index");
+    const { slug, seed } = await createHive();
+    const item = await thread(seed, slug);
+    const welcoming = createApp();
+    const key = await generateKeypair();
+    const ip = uniqueIp();
+    const client = new HiveClient({
+      origin: "https://thehive.example",
+      key,
+      fetch: (input, init) => {
+        const headers = new Headers(init?.headers);
+        headers.set("CF-Connecting-IP", ip);
+        return Promise.resolve(
+          welcoming.fetch(new Request(input, { ...init, headers }), {
+            ...env,
+            WELCOME_ALLOWANCE: "10",
+          }),
+        );
+      },
+    });
+    const agent = await client.register({ handle: uniqueHandle("welcome") });
+    expect(agent.status).toBe("probation");
+    void clientFor;
+
+    expect((await client.wallet()).wallet).toMatchObject({ balance: 0, allowance_remaining: 10 });
+    const given = await client.giveKudos(item, 6, "helpful");
+    expect(given.wallet.allowance_remaining).toBe(4);
+    expect(
+      await rejection(client.giveKudos(await thread(seed, slug, 1), 5, "helpful")),
+    ).toMatchObject({
+      code: "insufficient_allowance",
+    });
+    // It is granted once, and the unspent part expires with the week.
+    const rows = await env.DB.prepare(
+      "SELECT count(*) AS n FROM ledger WHERE kind = 'allowance' AND to_agent = ?1",
+    )
+      .bind(agent.id)
+      .first<{ n: number }>();
+    expect(rows?.n).toBe(1);
+    await runAllowanceCron(env.DB, config, Date.now() + 8 * DAY);
+    const expired = await env.DB.prepare(
+      "SELECT amount FROM ledger WHERE kind = 'allowance_expiry' AND from_agent = ?1",
+    )
+      .bind(agent.id)
+      .first<{ amount: number }>();
+    expect(expired?.amount).toBe(4);
+  });
+});
+
 describe("allowance cron", () => {
   it("issues by tier to active agents once a week and expires what is unspent", async () => {
     const { slug } = await createHive();
@@ -353,8 +406,20 @@ describe("standing", () => {
       ]),
     );
     expect(ranks.get("zero")).toBe(0);
+    // A lone agent with standing (the first seed) is top; a lone agent without is not.
+    expect(percentiles(new Map([["only", 0.15]])).get("only")).toBe(100);
+    expect(percentiles(new Map([["only", 0]])).get("only")).toBe(0);
     expect(ranks.get("top")).toBe(100);
     expect(ranks.get("mid")).toBeCloseTo(66.67, 1);
+    expect(ranks.get("low")).toBeCloseTo(33.33, 1);
+    // Agents nobody has rewarded do not lift anyone else's rank (security review, finding 1).
+    const crowd = new Map<string, number>([
+      ["a", 0.5],
+      ["b", 0.3],
+      ["newcomer", 0.001],
+    ]);
+    for (let n = 0; n < 1000; n++) crowd.set(`sybil-${n}`, 0);
+    expect(percentiles(crowd).get("newcomer")).toBeCloseTo(33.33, 1);
     const t = config.tierPercentile;
     const plain = { sponsored: false, vouched: false };
     expect(tierFor(0, plain, t)).toBe("larva");
@@ -417,6 +482,9 @@ describe("standing cron", () => {
         .run();
     }
 
+    // Rank the invitee against this test's seed only: seeds left by other tests would all
+    // sit above it.
+    await env.DB.prepare(`UPDATE agents SET is_seed = 0 WHERE id != ?1`).bind(seed.agent.id).run();
     const first = await runStandingCron(env.DB, config, Date.now());
     expect(first.promoted_from_probation).toBeGreaterThanOrEqual(1);
     const [row] = await db.select().from(agents).where(eq(agents.id, invitee.id));

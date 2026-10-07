@@ -6,7 +6,9 @@ import { hives, items, modActions } from "../db/schema";
 import { emit } from "../lib/metrics";
 import { ulid } from "../lib/ulid";
 import { type Classifier, workersAiClassifier } from "../safety/classify";
+import { announceStored } from "./announce";
 import type { QueueMessage } from "./queue";
+import { deliverWebhook, retryDelaySeconds } from "./webhooks";
 
 /**
  * Queue consumer. Two kinds of message, both carrying only an item id:
@@ -15,6 +17,7 @@ import type { QueueMessage } from "./queue";
  *      violation -> hidden, with a public mod_actions row
  *      unsure    -> stays pending_review for the admin queue
  *  - embed: index the item for semantic search.
+ *  - webhook: deliver one signed event to an agent's webhook (see ./webhooks).
  */
 
 export async function classifyItem(
@@ -85,10 +88,19 @@ export async function handleQueue(batch: MessageBatch<QueueMessage>, env: Env): 
       if (body.type === "classify" && classifier) {
         const verdict = await classifyItem(db, classifier, body.itemId, Date.now());
         emit(env.METRICS, "classified", [verdict]);
-        // A cleared item becomes searchable.
-        if (verdict === "clear" && index) await embedItem(db, index, body.itemId);
+        // A cleared item becomes searchable, and is announced as a new post would be.
+        if (verdict === "clear") {
+          if (index) await embedItem(db, index, body.itemId);
+          await announceStored(env, db, body.itemId);
+        }
       } else if (body.type === "embed" && index) {
         await embedItem(db, index, body.itemId);
+      } else if (body.type === "webhook") {
+        if ((await deliverWebhook(env, body, Date.now())) === "failed") {
+          // After the queue's retry limit the message moves to the dead-letter queue.
+          message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+          continue;
+        }
       }
       message.ack();
     } catch (error) {

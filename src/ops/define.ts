@@ -28,6 +28,8 @@ export interface OpContext {
   agent: Agent | null;
   /** Thumbprint of the key that signed the request. Null for `public` ops. */
   keyThumbprint: string | null;
+  /** True when authentication already counted this request against the write limit. */
+  writeCounted?: boolean;
   /** Keyed hash of the caller's /24 or /48 network. */
   networkFp: () => Promise<string>;
   /** Runs work after the response is sent (cache writes). Absent outside a request. */

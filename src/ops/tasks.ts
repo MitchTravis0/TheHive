@@ -11,6 +11,7 @@ import { envelope, EnvelopeSchema, parseFlags } from "../safety/envelope";
 import { scanText } from "../safety/scan";
 import { defineOp, type OpContext } from "./define";
 import { HIVE_SLUG } from "./hives";
+import { notify } from "../jobs/webhooks";
 import { prepareItem } from "./items";
 import { atLeast, caller, requireTier } from "./tiers";
 import { notFound, olderThan, paginate, publiclyVisible } from "./views";
@@ -85,6 +86,14 @@ type TaskRow = Awaited<ReturnType<typeof selectTasks>>[number];
 export const splitList = (value: string | null): string[] =>
   value ? value.split(",").filter((part) => part !== "") : [];
 
+function submissionFlags(text: string): string[] {
+  try {
+    return scanText(text, "submission").flags;
+  } catch {
+    return [];
+  }
+}
+
 function toTaskView(row: TaskRow): TaskView {
   return {
     id: row.id,
@@ -108,11 +117,16 @@ function toTaskView(row: TaskRow): TaskView {
     ),
     submission:
       row.submission !== null && row.claimantHandle && row.claimantTier
-        ? envelope(row.submission, {
-            handle: row.claimantHandle,
-            tier: row.claimantTier,
-            sponsored: row.claimantSponsor !== null,
-          })
+        ? envelope(
+            row.submission,
+            {
+              handle: row.claimantHandle,
+              tier: row.claimantTier,
+              sponsored: row.claimantSponsor !== null,
+            },
+            // Flags are not stored for submissions, so the stored text is scanned again.
+            { flags: submissionFlags(row.submission) },
+          )
         : null,
   };
 }
@@ -140,6 +154,20 @@ const taskResult = z.object({ task: TaskView });
 async function reread(ctx: OpContext, id: string, from: string) {
   const row = await loadTask(ctx, id);
   emit(ctx.env.METRICS, "task_transition", [from, row.state]);
+  if (row.state !== from) {
+    // Tell the other parties (poster, worker) through their webhooks.
+    const others = [row.authorId, row.claimedBy].filter(
+      (party): party is string => party !== null && party !== ctx.agent?.id,
+    );
+    const pushed = notify(ctx.env, others, {
+      type: `task.${row.state}`,
+      item_id: row.id,
+      hive: row.hive,
+      at: ctx.now,
+    });
+    if (ctx.waitUntil) ctx.waitUntil(pushed);
+    else await pushed;
+  }
   return { task: toTaskView(row) };
 }
 
@@ -354,6 +382,8 @@ export const tasksClaim = defineOp({
           leaseExpiresAt: null,
           renewals: 0,
           submission: null,
+          // The next claimant starts with no files; nothing of this claimant's is attributed to it.
+          evidenceKeys: null,
         })
         .where(and(mine, sql`${tasks.state} IN ('claimed', 'rejected')`))
         .returning({ id: tasks.itemId });
@@ -470,9 +500,9 @@ export const tasksReview = defineOp({
           .prepare(
             `UPDATE tasks SET state = 'verified', verifier_id = ?2, verified_at = ?3,
                     lease_expires_at = NULL
-              WHERE item_id = ?1 AND state = 'submitted'`,
+              WHERE item_id = ?1 AND state = 'submitted' AND claimed_by = ?4`,
           )
-          .bind(row.id, agent.id, ctx.now),
+          .bind(row.id, agent.id, ctx.now, row.claimedBy),
         settleEscrow(d1, "escrow_release", row.id, row.claimedBy, "verified", ctx.now),
       ]);
       if ((update?.meta.changes ?? 0) === 0) throw wrongState(row, "submitted");
@@ -549,7 +579,7 @@ export async function sweepExpiredLeases(d1: D1Database, now: number): Promise<n
     d1
       .prepare(
         `UPDATE tasks SET state = 'open', claimed_by = NULL, lease_expires_at = NULL, renewals = 0,
-                submission = NULL
+                submission = NULL, evidence_keys = NULL
           WHERE state IN ('claimed', 'rejected') AND lease_expires_at < ?1`,
       )
       .bind(now),

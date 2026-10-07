@@ -46,7 +46,7 @@ function increment(db: Db, rule: RateLimitRule, now: number) {
     .returning({ count: rateLimits.count });
 }
 
-function tooMany(rule: RateLimitRule, now: number, what: string): HiveError {
+export function rateLimited(rule: RateLimitRule, now: number, what: string): HiveError {
   const resetAt = windowStart(now, rule.windowMs) + rule.windowMs;
   const retryAfter = Math.max(1, Math.ceil((resetAt - now) / 1000));
   return new HiveError(
@@ -68,7 +68,7 @@ export async function enforceRateLimit(
 ): Promise<RateLimitState> {
   const [row] = await increment(db, rule, now);
   const count = row?.count ?? 1;
-  if (count > rule.limit) throw tooMany(rule, now, what);
+  if (count > rule.limit) throw rateLimited(rule, now, what);
   return {
     count,
     limit: rule.limit,
@@ -92,12 +92,55 @@ export async function assertUnderRateLimit(
         eq(rateLimits.windowStart, windowStart(now, rule.windowMs)),
       ),
     );
-  if ((row?.count ?? 0) >= rule.limit) throw tooMany(rule, now, what);
+  if ((row?.count ?? 0) >= rule.limit) throw rateLimited(rule, now, what);
 }
 
-/** Statement that counts one use; for inclusion in a `db.batch` with the action it counts. */
+/** Statement that counts one use; for a `db.batch` with the write it belongs to. */
 export function countUse(db: Db, rule: RateLimitRule, now: number) {
   return increment(db, rule, now);
+}
+
+/**
+ * Two statements for a D1 batch: count one use, then abort the whole batch if that took the
+ * counter past the limit. The guard inserts a ledger row with amount 0, which the ledger's
+ * CHECK refuses, so everything in the batch rolls back, the count included. Unlike a read
+ * followed by a write, concurrent requests cannot all slip under the limit.
+ */
+export function guardedUse(
+  d1: D1Database,
+  rule: RateLimitRule,
+  now: number,
+): D1PreparedStatement[] {
+  const start = windowStart(now, rule.windowMs);
+  return [
+    d1
+      .prepare(
+        `INSERT INTO rate_limits (bucket, window_start, count, expires_at) VALUES (?1, ?2, 1, ?3)
+         ON CONFLICT (bucket, window_start) DO UPDATE SET count = count + 1`,
+      )
+      .bind(rule.bucket, start, start + rule.windowMs),
+    d1
+      .prepare(
+        `INSERT INTO ledger (id, kind, amount, created_at)
+         SELECT 'limit-guard', 'allowance', 0, ?4
+          WHERE (SELECT count FROM rate_limits WHERE bucket = ?1 AND window_start = ?2) > ?3`,
+      )
+      .bind(rule.bucket, start, rule.limit, now),
+  ];
+}
+
+/** Every signed request an agent makes, reads included. Checked before anything is written. */
+export function agentRequestRule(config: Config, agentId: string, tier: Tier): RateLimitRule {
+  return {
+    bucket: `req:${agentId}`,
+    limit: config.signedReadsPerHour + config.writesPerHour[tier],
+    windowMs: HOUR_MS,
+  };
+}
+
+/** All registrations, from every network (BUILD_PLAN section 13, cost guard). */
+export function globalRegistrationRule(config: Config): RateLimitRule {
+  return { bucket: "register:global", limit: config.registrationsPerDay, windowMs: DAY_MS };
 }
 
 export function agentWriteRule(config: Config, agentId: string, tier: Tier): RateLimitRule {

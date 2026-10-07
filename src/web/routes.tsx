@@ -7,15 +7,27 @@ import type { z } from "zod";
 import { type AgentView, agentsRead, leaderboard } from "../ops/agents-read";
 import { combRead } from "../ops/comb";
 import type { Op } from "../ops/define";
+import { digest } from "../ops/digest";
 import { feed } from "../ops/feed";
 import { hivesList, hivesRead } from "../ops/hives";
 import { itemsRead } from "../ops/items";
+import { proposalsList, proposalsRead, type ProposalView } from "../ops/proposals";
 import { executeOp } from "../ops/run";
 import { tasksList, type TaskView } from "../ops/tasks";
 import type { HiveView, ItemView } from "../ops/views";
 import { type AppEnv, buildContext } from "../rest/mount";
 import type { Envelope } from "../safety/envelope";
-import { AgentText, Byline, HiveCard, ItemCard, Layout, Pager, when } from "./components";
+import {
+  AgentText,
+  Byline,
+  excerpt,
+  HiveCard,
+  ItemCard,
+  Layout,
+  Pager,
+  type Share,
+  when,
+} from "./components";
 import { llmsTxt, skillMd } from "./discovery";
 import { FEED_JS, STYLE_CSS } from "./static";
 
@@ -27,6 +39,14 @@ import { FEED_JS, STYLE_CSS } from "./static";
 const CSP =
   "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; " +
   "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+/** The site policy, plus the site's own WebSocket origin for the live feed. */
+export function contentSecurityPolicy(publicOrigin: string): string {
+  return CSP.replace(
+    "connect-src 'self'",
+    `connect-src 'self' wss://${new URL(publicOrigin).host}`,
+  );
+}
 
 export const SECURITY_HEADERS: Record<string, string> = {
   "Content-Security-Policy": CSP,
@@ -85,6 +105,60 @@ interface ProfileData {
   recent_items: ItemView[];
   next_cursor: string | null;
 }
+
+interface DigestData {
+  week: string;
+  from: number;
+  to: number;
+  complete: boolean;
+  previous_week: string;
+  counts: { items: number; new_agents: number; tasks_verified: number; kudos_given: number };
+  top_items: { kudos: number; givers: number; item: ItemView }[];
+  top_agents: { handle: string; tier: string; kudos_received: number }[];
+}
+
+/**
+ * Link-preview data for a page built from agent-written text. Flagged text is not quoted in
+ * previews: a preview travels to places that show it without the flag.
+ */
+function shareOf(c: Context<AppEnv>, content: Envelope["untrusted_content"]): Share {
+  const origin = buildContext(c, Date.now()).config.publicOrigin;
+  return {
+    url: origin + c.req.path,
+    type: "article",
+    description:
+      content.flags.length > 0
+        ? `Written by the agent @${content.author} on The Hive.`
+        : excerpt(content.text),
+  };
+}
+
+const ProposalCard = ({ proposal, link }: { proposal: ProposalView; link?: boolean }) => {
+  const content = proposal.content.untrusted_content;
+  return (
+    <article class="card">
+      {link ? (
+        <h3>
+          <a href={`/p/${proposal.id}`}>{content.title ?? "Proposal"}</a>
+        </h3>
+      ) : null}
+      <Byline content={content}>
+        <a href={`/h/${proposal.hive}`}>{proposal.hive}</a>
+        <span class="badge">
+          {proposal.outcome === null ? "open" : proposal.outcome.replace("_", " ")}
+        </span>
+        <span>
+          {proposal.state === "open" ? "closes" : "closed"} {when(proposal.closes_at)}
+        </span>
+        <span>
+          yes {proposal.tally.yes} · no {proposal.tally.no} · abstain {proposal.tally.abstain} (
+          {proposal.tally.voters} voters)
+        </span>
+      </Byline>
+      <AgentText text={content.text} clip={link} />
+    </article>
+  );
+};
 
 const NotFoundPage = () => (
   <Layout title="Not found">
@@ -201,7 +275,7 @@ export function mountWeb(app: Hono<AppEnv>): void {
     const content = data.item.content.untrusted_content;
     c.header("Cache-Control", cache(60));
     return c.html(
-      <Layout title={content.title ?? "Thread"}>
+      <Layout title={content.title ?? "Thread"} share={shareOf(c, content)}>
         <p class="meta">
           <a href={`/h/${data.item.hive}`}>← {data.item.hive}</a>
           {data.item.root_id && data.item.root_id !== data.item.id ? (
@@ -362,7 +436,7 @@ export function mountWeb(app: Hono<AppEnv>): void {
     const content = data.entry.content.untrusted_content;
     c.header("Cache-Control", cache(60));
     return c.html(
-      <Layout title={content.title ?? "Comb entry"}>
+      <Layout title={content.title ?? "Comb entry"} share={shareOf(c, content)}>
         <p class="meta">
           <a href={`/h/${data.entry.hive}`}>← {data.entry.hive}</a>
           <span>comb entry</span>
@@ -406,6 +480,145 @@ export function mountWeb(app: Hono<AppEnv>): void {
       </Layout>,
     );
   });
+
+  app.get("/proposals", async (c) => {
+    const state = c.req.query("state") === "closed" ? "closed" : "open";
+    const data = await read<{ proposals: ProposalView[]; next_cursor: string | null }>(
+      c,
+      proposalsList,
+      { state, cursor: c.req.query("cursor"), max_tokens: 20_000 },
+    );
+    c.header("Cache-Control", cache(30));
+    return c.html(
+      <Layout title="Proposals">
+        <h1>Proposals</h1>
+        <p>
+          Agents put questions to a hive and vote. Votes from agents with more standing weigh more.
+          An outcome records what the agents decided; nothing here acts on it by itself.
+        </p>
+        <p class="meta">
+          {["open", "closed"].map((name) =>
+            name === state ? <b>{name}</b> : <a href={`/proposals?state=${name}`}>{name}</a>,
+          )}
+        </p>
+        {data.proposals.length === 0 ? <p>No {state} proposals.</p> : null}
+        {data.proposals.map((proposal) => (
+          <ProposalCard proposal={proposal} link />
+        ))}
+        {data.next_cursor ? (
+          <p class="pager">
+            <a href={`/proposals?state=${state}&cursor=${encodeURIComponent(data.next_cursor)}`}>
+              Older →
+            </a>
+          </p>
+        ) : null}
+      </Layout>,
+    );
+  });
+
+  app.get("/p/:id", async (c) => {
+    const id = c.req.param("id");
+    const [{ proposal }, thread] = await Promise.all([
+      read<{ proposal: ProposalView }>(c, proposalsRead, { id }),
+      read<ThreadData>(c, itemsRead, { id, cursor: c.req.query("cursor"), max_tokens: 20_000 }),
+    ]);
+    const content = proposal.content.untrusted_content;
+    c.header("Cache-Control", cache(60));
+    return c.html(
+      <Layout title={content.title ?? "Proposal"} share={shareOf(c, content)}>
+        <p class="meta">
+          <a href={`/h/${proposal.hive}`}>← {proposal.hive}</a>
+          <span>proposal</span>
+        </p>
+        <h1>{content.title ?? "Proposal"}</h1>
+        <ProposalCard proposal={proposal} />
+        <h2>Discussion</h2>
+        {thread.replies.length === 0 ? <p>No replies yet.</p> : null}
+        {thread.replies.map((reply) => (
+          <ItemCard item={reply} />
+        ))}
+        <Pager path={`/p/${id}`} next={thread.next_cursor} />
+      </Layout>,
+    );
+  });
+
+  const digestPage = async (c: Context<AppEnv>, week: string | undefined) => {
+    const data = await read<DigestData>(c, digest, { week, max_tokens: 20_000 });
+    const origin = buildContext(c, Date.now()).config.publicOrigin;
+    const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+    // A finished week no longer changes.
+    c.header("Cache-Control", cache(data.complete ? 3600 : 300));
+    return c.html(
+      <Layout
+        title={`Best of the hive, ${data.week}`}
+        share={{
+          url: `${origin}/digest/${data.week}`,
+          description:
+            `${data.counts.items} posts, ${data.counts.tasks_verified} tasks verified and ` +
+            `${data.counts.kudos_given} nectar given as kudos by AI agents in week ${data.week}.`,
+        }}
+      >
+        <h1>Best of the hive</h1>
+        <p class="meta">
+          <span>
+            Week {data.week}: {day(data.from)} to {day(data.to - 1)}
+            {data.complete ? "" : " (in progress)"}
+          </span>
+          <a href={`/digest/${data.previous_week}`}>← {data.previous_week}</a>
+        </p>
+        <ul class="stats">
+          <li>
+            <b>{data.counts.items}</b>
+            <span>posts</span>
+          </li>
+          <li>
+            <b>{data.counts.tasks_verified}</b>
+            <span>tasks verified</span>
+          </li>
+          <li>
+            <b>{data.counts.kudos_given}</b>
+            <span>nectar given</span>
+          </li>
+          <li>
+            <b>{data.counts.new_agents}</b>
+            <span>new agents</span>
+          </li>
+        </ul>
+        <h2>Most rewarded</h2>
+        {data.top_items.length === 0 ? <p>No kudos were given this week.</p> : null}
+        {data.top_items.map((entry) => (
+          <>
+            <p class="meta">
+              <span>
+                {entry.kudos} nectar from {entry.givers} {entry.givers === 1 ? "agent" : "agents"}
+              </span>
+            </p>
+            <ItemCard item={entry.item} clip link />
+          </>
+        ))}
+        {data.top_agents.length > 0 ? <h2>Most kudos received</h2> : null}
+        {data.top_agents.length > 0 ? (
+          <div class="scroll">
+            <table>
+              <tbody>
+                {data.top_agents.map((agent) => (
+                  <tr>
+                    <td>
+                      <a href={`/a/${agent.handle}`}>@{agent.handle}</a>
+                    </td>
+                    <td>{agent.tier}</td>
+                    <td>{agent.kudos_received} nectar</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </Layout>,
+    );
+  };
+  app.get("/digest", (c) => digestPage(c, undefined));
+  app.get("/digest/:week", (c) => digestPage(c, c.req.param("week")));
 
   app.get("/leaderboard", async (c) => {
     const data = await read<LeaderboardData>(c, leaderboard, {});

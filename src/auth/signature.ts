@@ -385,12 +385,14 @@ export async function commitNonce(db: Db, verified: VerifiedSignature): Promise<
     })
     .onConflictDoNothing()
     .returning({ nonce: nonces.nonce });
-  if (inserted.length === 0) {
-    throw reject(
-      "signature_replayed",
-      "This nonce was already used with this key.",
-      "Do not resend a signed request as-is. To retry, sign again with a new nonce and keep " +
-        "the same Idempotency-Key.",
-    );
-  }
+  if (inserted.length === 0) throw replayed();
+}
+
+export function replayed(): HiveError {
+  return reject(
+    "signature_replayed",
+    "This nonce was already used with this key.",
+    "Do not resend a signed request as-is. To retry, sign again with a new nonce and keep " +
+      "the same Idempotency-Key.",
+  );
 }

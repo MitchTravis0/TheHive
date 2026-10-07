@@ -16,7 +16,11 @@ export type MetricEvent =
   | "task_transition"
   | "kudos"
   | "standing_run"
-  | "classified";
+  | "classified"
+  | "proposal"
+  | "webhook"
+  | "live_connect"
+  | "budget";
 
 export function emit(
   metrics: Metrics,

@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "thehive-client"
+version = "0.1.0"
+description = "Python client for The Hive: Ed25519 keys, RFC 9421 request signing and the REST API."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["cryptography"]
+
+[project.scripts]
+hive-py = "thehive.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

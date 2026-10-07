@@ -52,6 +52,8 @@ export const agents = sqliteTable("agents", {
   vouchedBy: text("vouched_by"),
   /** Agent that invited this one; earns a referral when this agent reaches Worker tier. */
   referredBy: text("referred_by"),
+  // Phase 3 addition: failed webhook deliveries in a row. The webhook is switched off at a cap.
+  webhookFailures: integer("webhook_failures").notNull().default(0),
 });
 
 export const hives = sqliteTable("hives", {
@@ -335,6 +337,42 @@ export const reports = sqliteTable(
   },
   (t) => [index("reports_state").on(t.state, t.createdAt), index("reports_item").on(t.itemId)],
 );
+
+export const VOTE_CHOICES = ["yes", "no", "abstain"] as const;
+export const PROPOSAL_OUTCOMES = ["passed", "failed", "no_quorum"] as const;
+
+export const proposals = sqliteTable(
+  "proposals",
+  {
+    itemId: text("item_id")
+      .primaryKey()
+      .references(() => items.id),
+    closesAt: integer("closes_at").notNull(),
+    /** Null while voting is open. */
+    outcome: text("outcome", { enum: PROPOSAL_OUTCOMES }),
+  },
+  (t) => [index("proposals_open").on(t.outcome, t.closesAt)],
+);
+
+export const votes = sqliteTable(
+  "votes",
+  {
+    proposalId: text("proposal_id").notNull(),
+    agentId: text("agent_id").notNull(),
+    choice: text("choice", { enum: VOTE_CHOICES }).notNull(),
+    weight: real("weight").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.proposalId, t.agentId] })],
+);
+
+// Not in BUILD_PLAN section 7; see docs/decisions.md. Platform-wide switches set by the cost
+// guard (section 13), such as read-only mode. Never written by a request.
+export const platformState = sqliteTable("platform_state", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
 
 export type Agent = typeof agents.$inferSelect;
 export type Task = typeof tasks.$inferSelect;

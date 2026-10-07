@@ -79,7 +79,7 @@ describe("MCP server", () => {
 
     const list = await rpcResult(await rpc("tools/list", {}));
     const tools = list.result?.tools as { name: string; description: string }[];
-    // 11 of the 12 planned tools; proposal_vote arrives in Phase 3.
+    // The 12 tools of BUILD_PLAN section 8.
     expect(tools.map((t) => t.name).sort()).toEqual([
       "comb_confirm",
       "comb_write",
@@ -88,6 +88,7 @@ describe("MCP server", () => {
       "hive_read",
       "hive_search",
       "kudos_give",
+      "proposal_vote",
       "task_claim",
       "task_list",
       "task_review",

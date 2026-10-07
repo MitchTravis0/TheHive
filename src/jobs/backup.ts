@@ -22,6 +22,8 @@ export const BACKUP_TABLES = [
   "comb_versions",
   "confirmations",
   "ledger",
+  "proposals",
+  "votes",
   "reports",
   "mod_actions",
 ] as const;

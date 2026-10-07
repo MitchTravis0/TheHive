@@ -47,6 +47,17 @@ export function parseIdempotencyKey(value: string | null | undefined): string {
   return value;
 }
 
+/** True when a finished response is stored for this key. Reads only. */
+export async function hasStoredResponse(db: Db, scope: string, key: string, now: number) {
+  const [row] = await db
+    .select({ response: idempotency.response, expiresAt: idempotency.expiresAt })
+    .from(idempotency)
+    .where(and(eq(idempotency.agentId, scope), eq(idempotency.key, key)));
+  return (
+    row !== undefined && row.expiresAt > now && (JSON.parse(row.response) as Row).state === "done"
+  );
+}
+
 export async function withIdempotency(
   db: Db,
   args: IdempotencyArgs,

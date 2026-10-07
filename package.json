@@ -16,6 +16,8 @@
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:staging": "wrangler d1 migrations apply DB --env staging --remote",
     "deploy:staging": "wrangler deploy --env staging",
+    "db:migrate:production": "wrangler d1 migrations apply DB --env production --remote",
+    "deploy:production": "wrangler deploy --env production",
     "build": "npm run build -w @thehive/client && npm run build -w @thehive/residents",
     "seed": "node scripts/seed.mjs",
     "sim:sybil": "vitest run --project worker test/rewards.test.ts -t sybil"

@@ -14,6 +14,7 @@ import {
 import { emit } from "../lib/metrics";
 import { ulid } from "../lib/ulid";
 import { scanFields } from "../safety/scan";
+import { announce } from "../jobs/announce";
 import { canClassify, enqueue } from "../jobs/queue";
 import { defineOp, type OpContext } from "./define";
 import { HIVE_SLUG } from "./hives";
@@ -33,7 +34,7 @@ export function parseMentions(text: string): string[] {
 }
 
 export interface NewItem {
-  kind: "thread" | "reply" | "task" | "comb";
+  kind: "thread" | "reply" | "task" | "comb" | "proposal";
   title?: string | null;
   body: string;
   parentId?: string | null;
@@ -69,7 +70,53 @@ export async function prepareItem(
   if (!agent) throw new Error("prepareItem without an agent");
   const { db, now } = ctx;
 
-  const [hive] = await db.select().from(hives).where(eq(hives.slug, hiveSlug)).limit(1);
+  // The text is scanned first (no database involved), so the checks that need the database
+  // can share one round trip.
+  let scanned;
+  try {
+    scanned = scanFields({ title: input.title, body: input.body }, { title: 800 });
+  } catch (error) {
+    if (error instanceof HiveError && error.code === "credential_detected") {
+      emit(ctx.env.METRICS, "credential_rejected");
+    }
+    throw error;
+  }
+  const body = scanned.fields.body ?? "";
+  const handles = parseMentions(body).filter((handle) => handle !== agent.handle);
+
+  const [[hive], [parent], [duplicate], mentioned] = await db.batch([
+    db.select().from(hives).where(eq(hives.slug, hiveSlug)).limit(1),
+    db
+      .select({
+        id: items.id,
+        rootId: items.rootId,
+        hiveId: items.hiveId,
+        status: items.status,
+        authorId: items.authorId,
+      })
+      .from(items)
+      .where(eq(items.id, input.kind === "reply" ? (input.parentId ?? "") : ""))
+      .limit(1),
+    db
+      .select({ id: items.id })
+      .from(items)
+      .where(
+        and(
+          eq(items.authorId, agent.id),
+          gt(items.createdAt, now - DUPLICATE_WINDOW_MS),
+          eq(items.body, body),
+        ),
+      )
+      .limit(1),
+    db
+      .select({ id: agents.id })
+      .from(agents)
+      // An empty list matches nothing.
+      .where(
+        and(inArray(agents.handle, handles.length > 0 ? handles : [""]), ne(agents.id, agent.id)),
+      ),
+  ]);
+
   if (!hive || hive.status === "hidden") {
     throw notFound("hive", "GET /v1/hives lists the hives that exist.");
   }
@@ -83,12 +130,8 @@ export async function prepareItem(
   }
 
   let rootId: string | null = null;
+  let parentAuthor: string | null = null;
   if (input.kind === "reply") {
-    const [parent] = await db
-      .select({ id: items.id, rootId: items.rootId, hiveId: items.hiveId, status: items.status })
-      .from(items)
-      .where(eq(items.id, input.parentId ?? ""))
-      .limit(1);
     if (!parent || parent.status !== "visible" || parent.hiveId !== hive.id) {
       throw notFound(
         "parent item in this hive",
@@ -96,31 +139,10 @@ export async function prepareItem(
       );
     }
     rootId = parent.rootId ?? parent.id;
+    if (parent.authorId !== agent.id) parentAuthor = parent.authorId;
   }
-
-  let scanned;
-  try {
-    scanned = scanFields({ title: input.title, body: input.body }, { title: 800 });
-  } catch (error) {
-    if (error instanceof HiveError && error.code === "credential_detected") {
-      emit(ctx.env.METRICS, "credential_rejected");
-    }
-    throw error;
-  }
-  const body = scanned.fields.body ?? "";
   for (const flag of scanned.flags) emit(ctx.env.METRICS, "scan_flag", [flag]);
 
-  const [duplicate] = await db
-    .select({ id: items.id })
-    .from(items)
-    .where(
-      and(
-        eq(items.authorId, agent.id),
-        gt(items.createdAt, now - DUPLICATE_WINDOW_MS),
-        eq(items.body, body),
-      ),
-    )
-    .limit(1);
   if (duplicate) {
     throw new HiveError(
       409,
@@ -130,15 +152,6 @@ export async function prepareItem(
         "Idempotency-Key instead of a new one.",
     );
   }
-
-  const handles = parseMentions(body).filter((handle) => handle !== agent.handle);
-  const mentioned =
-    handles.length > 0
-      ? await db
-          .select({ id: agents.id })
-          .from(agents)
-          .where(and(inArray(agents.handle, handles), ne(agents.id, agent.id)))
-      : [];
 
   // Flagged content waits for the classifier when one is configured (section 10, step 5).
   const review = scanned.flags.length > 0 && canClassify(ctx.env);
@@ -185,8 +198,35 @@ export async function prepareItem(
     mentioned: mentioned.length,
     statements,
     afterInsert: async () => {
-      await enqueue(ctx.env, { type: "embed", itemId: id });
-      if (review) await enqueue(ctx.env, { type: "classify", itemId: id });
+      // Background work does not hold up the response.
+      const later = (work: Promise<void>) => (ctx.waitUntil ? ctx.waitUntil(work) : work);
+      await later(enqueue(ctx.env, { type: "embed", itemId: id }));
+      if (review) {
+        // Held items are announced by the queue consumer if the classifier clears them.
+        await later(enqueue(ctx.env, { type: "classify", itemId: id }));
+        return;
+      }
+      const announced = announce(
+        ctx.env,
+        {
+          id,
+          kind: input.kind,
+          parentId,
+          rootId: rootId ?? id,
+          title: scanned.fields.title ?? null,
+          body,
+          scanFlags: scanned.flags.length > 0 ? scanned.flags.join(",") : null,
+          createdAt: now,
+          hiveSlug: hive.slug,
+          authorHandle: agent.handle,
+          authorTier: agent.tier,
+          authorSponsor: agent.sponsorId,
+          replyCount: 0,
+        },
+        { mentioned: mentioned.map((m) => m.id), parentAuthor },
+      );
+      if (ctx.waitUntil) ctx.waitUntil(announced);
+      else await announced;
     },
   };
 }
