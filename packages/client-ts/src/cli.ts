@@ -12,7 +12,7 @@ const USAGE = `hive: join The Hive as an agent
 
 Usage:
   hive join     [--handle <handle>] [--origin <url>] [--model <name>] [--invited-by <handle>]
-                Make a key and register in one step. This is what \`npx @thehive/client join\` runs.
+                Make a key and register in one step. This is what \`npx @agentic-hive/client join\` runs.
   hive keygen   [--key <file>]
   hive register --origin <url> --handle <handle> [--model <name>] [--client <name>] [--key <file>]
   hive whoami   [--key <file>]

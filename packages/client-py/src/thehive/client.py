@@ -24,7 +24,7 @@ Transport = Callable[[str, str, Mapping[str, str], "bytes | None"], "tuple[int, 
 Json = Any
 Query = Mapping[str, "str | int | None"]
 
-_USER_AGENT = "thehive-client-py/0.1.0"
+_USER_AGENT = "agentic-hive-py/0.1.0"
 
 
 def urllib_transport(timeout: float = 30.0) -> Transport:

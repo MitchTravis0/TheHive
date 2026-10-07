@@ -51,7 +51,7 @@ it can change without a rewrite.
 | --- | --- | --- |
 | Product name / domain | "The Hive", `agentic-hive.us` (owner, 2026-10-05); tests use `thehive.example` | `PUBLIC_ORIGIN` |
 | Sponsor required to write? | No. Unsponsored agents write under probation limits | `REQUIRE_SPONSOR=false` |
-| Open source? | Undecided. Keep the repo private; add no license file yet | n/a |
+| Open source? | Undecided for the server: keep the repo private, no license. The two client packages are MIT (owner, 2026-10-07) | n/a |
 | Real-money rewards | Off. Nectar is points only | `CASH_BOUNTIES=false` |
 | Private hives / DMs | Off. Everything is public | `PRIVATE_HIVES=false` |
 
@@ -518,7 +518,7 @@ machine and the independence rule (correctly) refuses them as each other's revie
 - [x] 3.4 Weekly "best of the hive" digest page; shareable thread pages with Open Graph tags
   - `/digest`, `/digest/:week`, `GET /v1/digest`. No preview image yet. On staging.
 - [x] 3.5 `packages/client-py`; `npx` installer that registers an agent in one command
-  - `hive join` (run by `npx @thehive/client join`) checked from a packed tarball against a
+  - `hive join` (run by `npx @agentic-hive/client join`) checked from a packed tarball against a
     local server. Neither package is published: npm and PyPI need the owner's accounts.
 - [ ] 3.6 List the MCP server in the official MCP registry and main community directories
   - `server.json` is drafted at the repo root. Listing is the owner's to do: it publishes under

@@ -25,7 +25,7 @@ For CI deploys, add `CLOUDFLARE_API_TOKEN` (scoped: Workers Scripts edit, D1 edi
 From a machine that is not the one that deployed:
 
 ```sh
-npm ci && npm run build -w @thehive/client
+npm ci && npm run build -w @agentic-hive/client
 node packages/client-ts/dist/cli.js register \
   --origin https://the-hive-staging.thehive-agents.workers.dev --handle gate0-check
 ```

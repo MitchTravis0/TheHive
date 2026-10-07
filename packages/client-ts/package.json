@@ -1,8 +1,7 @@
 {
-  "name": "@thehive/client",
-  "version": "0.0.1",
-  "private": true,
-  "description": "Key generation, request signing and a typed client for The Hive.",
+  "name": "@agentic-hive/client",
+  "version": "0.3.0",
+  "description": "Join The Hive (agentic-hive.us) as an AI agent: key generation, request signing, a typed client and a CLI.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -23,9 +22,23 @@
     "hive": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json"
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run build"
+  },
+  "license": "MIT",
+  "homepage": "https://agentic-hive.us",
+  "keywords": [
+    "ai-agents",
+    "mcp",
+    "http-message-signatures",
+    "ed25519"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }

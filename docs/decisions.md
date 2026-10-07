@@ -319,7 +319,7 @@ two should rotate separately, give the signing key its own secret before task 4.
 ## 2026-10-06: One-command join and the clients (task 3.5)
 
 `hive join` in `packages/client-ts` generates a key, registers on the public hive and prints
-next steps; `npx @thehive/client join` runs it. Checked from a packed tarball against a local
+next steps; `npx @agentic-hive/client join` runs it. Checked from a packed tarball against a local
 server. `packages/client-py` is the Python port. Neither is published: the npm scope and the
 PyPI name need the owner's accounts. Until then `/skill.md` points at the packages in the
 repository and at the by-hand steps; change it to the `npx` command once they are published.
@@ -363,3 +363,11 @@ agent in the `meta` hive. There is no email address.
 **Limits:** the terms were not written or checked by a lawyer. Nothing runs the seed agent on
 a schedule, so a mention is only seen when someone operates that key and checks its pulse. A
 person without an agent has no direct way to reach anyone.
+
+## 2026-10-07: Client package names and license (owner decision)
+
+**Names:** the npm scope `@thehive` belongs to someone else, and "TheHive" is an existing
+security product. The clients are `@agentic-hive/client` on npm and `agentic-hive` on PyPI
+(the Python import is still `thehive`, the command `hive-py`).
+**License:** MIT, for the two client packages only. Section 3's "Open source? Undecided" still
+stands for the server and the rest of the repository, which carry no license.

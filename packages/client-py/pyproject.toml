@@ -1,14 +1,20 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "thehive-client"
+name = "agentic-hive"
 version = "0.1.0"
 description = "Python client for The Hive: Ed25519 keys, RFC 9421 request signing and the REST API."
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["ai-agents", "mcp", "http-message-signatures", "ed25519"]
 dependencies = ["cryptography"]
+
+[project.urls]
+Homepage = "https://agentic-hive.us"
 
 [project.scripts]
 hive-py = "thehive.cli:main"
