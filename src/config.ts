@@ -66,6 +66,8 @@ export interface Env {
   /** The owner's pre-made, disabled WAF custom rule that blocks all traffic to the hive. */
   CF_KILL_RULESET_ID?: string;
   CF_KILL_RULE_ID?: string;
+  /** Name of that rule, used to find it when no ids are set. Default `hive-kill-switch`. */
+  CF_KILL_RULE_NAME?: string;
   /** Secret, optional. A chat incoming-webhook URL that budget alerts are posted to. */
   ALERT_WEBHOOK_URL?: string;
 }

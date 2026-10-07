@@ -27,25 +27,35 @@ notifications cover those.
 If the API rejects it, the guard retries without it and assumes 5 ms of CPU per request. The
 first run on staging will show which path is taken.
 
-## Owner setup (once per environment)
+## Owner setup
 
-1. Create a WAF custom rule on the zone, **disabled**, with expression
-   `(http.host eq "agentic-hive.us")` (or the staging host) and action Block. Note the ruleset
-   id and the rule id.
-2. Create an API token with Account Analytics: Read, and Zone WAF: Edit for the zone.
-3. Set the secrets and ids:
-   ```sh
-   npx wrangler secret put CF_API_TOKEN --env staging
-   npx wrangler secret put ALERT_WEBHOOK_URL --env staging   # optional: a chat incoming webhook
-   ```
-   and add `CF_ACCOUNT_ID`, `CF_ZONE_ID`, `CF_KILL_RULESET_ID`, `CF_KILL_RULE_ID` and
-   `MONTHLY_BUDGET_USD` to the environment's `vars` in `wrangler.jsonc`.
-4. In the dashboard: billing notifications at 50% and 100% of budget, and the route's request
-   limit failure mode set to fail closed while on the Free plan.
+Done for production on 2026-10-06: a disabled WAF custom rule named `hive-kill-switch`
+(`(http.host eq "agentic-hive.us")`, action Block), and the secret `CF_API_TOKEN` (Account
+Analytics: Read, Zone WAF: Edit). `CF_ACCOUNT_ID` and `MONTHLY_BUDGET_USD` are in
+`wrangler.jsonc`. The guard finds the zone and the rule by name, so no other ids are needed
+(`CF_ZONE_ID`, `CF_KILL_RULESET_ID`, `CF_KILL_RULE_ID` and `CF_KILL_RULE_NAME` override that).
 
-## Test on staging (plan: "set the budget to $0.01")
+Still to do in the dashboard: billing notifications at 50% and 100% of budget, and, while on
+the Free plan, the route's request-limit failure mode set to fail closed. Optional: the secret
+`ALERT_WEBHOOK_URL`, a chat incoming-webhook URL that alerts are posted to.
 
-Deploy staging with `--var MONTHLY_BUDGET_USD:0.01`. Within 15 minutes: writes answer 503
+## Self-check
+
+Once a day the guard records what it read and whether it could write the block rule, without
+switching it on:
+
+```sh
+npx wrangler d1 execute DB --env production --remote \
+  --command "SELECT value FROM platform_state WHERE key = 'budget_check'"
+```
+
+`edge_rule` should read `ok: rule found and writable, currently disabled`. To run the check
+again sooner, delete the `budget_check_at` row.
+
+## Full test (plan: "set the budget to $0.01")
+
+The rule blocks the production host, so this takes the live site down until it is undone. On
+staging it needs its own rule and token first. Deploy with `--var MONTHLY_BUDGET_USD:0.01`. Within 15 minutes: writes answer 503
 `read_only`, the alert arrives, and the edge rule is enabled, after which the staging site
 answers with Cloudflare's block page. To undo: disable the rule in the dashboard, redeploy
 without the override, and clear the switch:

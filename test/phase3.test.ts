@@ -732,17 +732,28 @@ describe("cost guard", () => {
         ruleEnabled = (JSON.parse(init?.body as string) as { enabled: boolean }).enabled;
         return Promise.resolve(Response.json({ success: true }));
       }
+      if (url.includes("/zones?")) {
+        return Promise.resolve(
+          Response.json({
+            result: [
+              { id: "zone-1", name: "other.example" },
+              { id: "zone-9", name: "thehive.example" },
+            ],
+          }),
+        );
+      }
       if (url.includes("/rulesets/")) {
         return Promise.resolve(
           Response.json({
             success: true,
             result: {
+              id: "ruleset-1",
               rules: [
                 {
                   id: "rule-1",
                   action: "block",
                   expression: "true",
-                  description: "kill",
+                  description: "hive-kill-switch",
                   enabled: ruleEnabled,
                 },
               ],
@@ -784,7 +795,7 @@ describe("cost guard", () => {
       const blocked = await runBudgetGuard(guardEnv, config, now);
       expect(blocked).toMatchObject({ level: "blocked", edge_blocked: true });
       expect(ruleEnabled).toBe(true);
-      const patch = calls.find((c) => c.init?.method === "PATCH");
+      const patch = calls.findLast((c) => c.init?.method === "PATCH");
       expect(patch?.url).toBe(
         "https://api.cloudflare.com/client/v4/zones/zone/rulesets/ruleset-1/rules/rule-1",
       );
@@ -792,7 +803,7 @@ describe("cost guard", () => {
       expect(JSON.parse(patch?.init?.body as string)).toEqual({
         action: "block",
         expression: "true",
-        description: "kill",
+        description: "hive-kill-switch",
         enabled: true,
       });
 
@@ -806,6 +817,34 @@ describe("cost guard", () => {
         level: "ok",
       });
       expect(await readOnlyReason(env, Date.UTC(2026, 11, 2))).toBeNull();
+
+      // With no ids configured, the zone and the rule are found by name, and the daily
+      // self-check records that the rule can be written without switching it on.
+      ruleEnabled = false;
+      const byName = {
+        ...env,
+        CF_API_TOKEN: "test-token",
+        CF_ACCOUNT_ID: "acct",
+        PUBLIC_ORIGIN: "https://staging.thehive.example",
+      };
+      await env.DB.prepare(`DELETE FROM platform_state WHERE key LIKE 'budget_check%'`).run();
+      calls.length = 0;
+      await runBudgetGuard(byName, config, Date.UTC(2026, 11, 3));
+      const check = await env.DB.prepare(
+        `SELECT value FROM platform_state WHERE key = 'budget_check'`,
+      ).first<{ value: string }>();
+      expect(JSON.parse(check?.value ?? "{}")).toMatchObject({
+        level: "ok",
+        edge_rule: "ok: rule found and writable, currently disabled",
+      });
+      expect(ruleEnabled).toBe(false);
+      expect(calls.map((c) => c.url)).toContain(
+        "https://api.cloudflare.com/client/v4/zones/zone-9/rulesets/phases/http_request_firewall_custom/entrypoint",
+      );
+      // Not again within the day.
+      calls.length = 0;
+      await runBudgetGuard(byName, config, Date.UTC(2026, 11, 3, 1));
+      expect(calls.filter((c) => c.url.includes("/zones"))).toEqual([]);
     } finally {
       budgetDeps.fetcher = original;
       await setReadOnly(env, null, Date.now());

@@ -109,6 +109,9 @@
       "vars": {
         "ENVIRONMENT": "production",
         "PUBLIC_ORIGIN": "https://agentic-hive.us",
+        // Cost guard (docs/cost-guard.md). The API token is the secret CF_API_TOKEN.
+        "CF_ACCOUNT_ID": "6ef9254186a0762b36c9d2dd4ba61074",
+        "MONTHLY_BUDGET_USD": "25",
         "REQUIRE_SPONSOR": "false",
         "CASH_BOUNTIES": "false",
         "PRIVATE_HIVES": "false",
