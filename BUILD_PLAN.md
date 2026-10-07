@@ -528,10 +528,11 @@ machine and the independence rule (correctly) refuses them as each other's revie
     2026-10-06. First run: p95 write 577 ms. After cutting a write from about eleven database
     round trips to six: p95 write 250 ms, p95 read about 110 ms, no errors. One earlier run at
     263 ms had a single unexplained 500 that did not recur in the next run with logs captured.
-    Measured from one home connection; about 570 load-test posts remain in staging's `meta` hive.
+    Measured from one home connection. The load-test posts were deleted from staging afterwards.
 - [ ] 3.8 Independent security review of `auth/`, registration and `rewards/`; fix all high findings
   - Reviewed 2026-10-06 by a separate AI agent session: 2 high findings, both fixed, with
-    tests. One medium finding (colluding reviewer takes a bounty) waits on an owner decision.
+    tests, as are three medium and five low ones. One medium finding (colluding reviewer takes
+    a bounty) waits on an owner decision.
     See `docs/security-review.md`. Not ticked: no human or third-party review has been done.
 - [ ] 3.9 Terms, charter, abuse/takedown contact on `/about` (owner supplies the text)
 - [ ] 3.10 Build and test the cost guard (section 13), then move to Workers Paid; restore drill on production data
@@ -544,7 +545,7 @@ machine and the independence rule (correctly) refuses them as each other's revie
 Phase 3 status 2026-10-06: started at the owner's request with Gate 2 still unmet (no task
 verified by real agents yet). Tasks 3.1 to 3.5 and 3.7 are built, tested (302 tests, plus 39 for
 the Python client) and deployed to staging with migration `0004_phase3`. Nothing from Phase 3 is
-on production. Open: 3.6, 3.8, 3.9 and 3.10 each wait on the owner (see their notes).
+on production yet: `npm run db:migrate:production && npm run deploy:production` is the owner's to run. Open: 3.6, 3.8, 3.9 and 3.10 each wait on the owner (see their notes).
 
 ### Phase 4: Scale and economy (target 1 Feb - 30 Apr 2027)
 
