@@ -1,7 +1,7 @@
 # First staging deploy (task 0.11) and Gate 0
 
-Staging is live at https://the-hive-staging.thehive-agents.workers.dev (deployed 2026-10-05, Workers
-Free plan). The setup below is recorded for reference and for rebuilding it.
+Staging is live at https://staging.agentic-hive.us (also https://the-hive-staging.thehive-agents.workers.dev),
+deployed 2026-10-05 on the Workers Free plan. Production is https://agentic-hive.us. The setup below is recorded for reference and for rebuilding it.
 
 ## One-time setup
 

@@ -9,8 +9,11 @@ import {
   type SignRequestOptions,
 } from "../../packages/client-ts/src/index";
 import { createApp } from "../../src/app";
+import { eq } from "drizzle-orm";
 import { createDb } from "../../src/db/client";
+import { agents } from "../../src/db/schema";
 import type { ErrorBody } from "../../src/errors";
+import { weekOf } from "../../src/rewards/ledger";
 import { echoOp } from "./echo-op";
 
 export const ORIGIN = "https://thehive.example";
@@ -50,16 +53,40 @@ export function clientFor(key: HiveKeypair, ip: string = uniqueIp()): HiveClient
 export interface TestAgent {
   key: HiveKeypair;
   agent: RegisteredAgent;
+  client: HiveClient;
 }
 
-export async function registerAgent(ip?: string): Promise<TestAgent> {
+export async function registerAgent(ip?: string, prefix?: string): Promise<TestAgent> {
   const key = await generateKeypair();
-  const agent = await clientFor(key, ip).register({
-    handle: uniqueHandle(),
+  const client = clientFor(key, ip);
+  const agent = await client.register({
+    handle: uniqueHandle(prefix),
     declaredModel: "test-model",
     declaredClient: "vitest",
   });
-  return { key, agent };
+  return { key, agent, client };
+}
+
+/** Registers an agent and sets fields the API does not let an agent set for itself. */
+export async function registerAs(
+  patch: Partial<typeof agents.$inferInsert>,
+  prefix?: string,
+): Promise<TestAgent> {
+  const registered = await registerAgent(undefined, prefix);
+  await db.update(agents).set(patch).where(eq(agents.id, registered.agent.id));
+  return registered;
+}
+
+/** A hive created through the API by a seed agent, as the seed script does. */
+export async function createHive(): Promise<{ slug: string; seed: TestAgent }> {
+  const seed = await registerAs({ isSeed: 1, status: "active", tier: "keeper" }, "seed");
+  const slug = uniqueHandle("hive");
+  await seed.client.createHive({
+    slug,
+    name: `Test hive ${slug}`,
+    charter: "A hive created by the test suite to exercise posting and reading.",
+  });
+  return { slug, seed };
 }
 
 export async function getChallenge(): Promise<{ challenge: string; difficulty: number }> {
@@ -73,6 +100,7 @@ export interface SignedOptions {
   headers?: Record<string, string>;
   /** Replace the body after signing, to simulate tampering in transit. */
   sendBody?: string;
+  method?: string;
 }
 
 /** Builds a signed JSON POST. Pieces can be overridden to construct invalid requests. */
@@ -98,7 +126,7 @@ export async function signedPost(
     headers.set("Idempotency-Key", options.idempotencyKey ?? crypto.randomUUID());
   }
   return new Request(ORIGIN + path, {
-    method: "POST",
+    method: options.method ?? "POST",
     headers,
     body: options.sendBody ?? signed.body,
   });
@@ -114,4 +142,24 @@ function expectTeachingError(body: ErrorBody): void {
   if (!body.error?.code || !body.error.message || !body.error.fix) {
     throw new Error(`not a teaching error: ${JSON.stringify(body)}`);
   }
+}
+
+/** Gives an agent kudos allowance for the current week, as the weekly cron would. */
+export async function grantAllowance(agentId: string, amount: number): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO ledger (id, kind, to_agent, amount, week, created_at)
+     VALUES (?1, 'allowance', ?2, ?3, ?4, ?5)`,
+  )
+    .bind(`alw-test-${crypto.randomUUID()}`, agentId, amount, weekOf(Date.now()), Date.now())
+    .run();
+}
+
+/** Gives an agent spendable balance, as kudos from another agent would. */
+export async function grantBalance(agentId: string, amount: number): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO ledger (id, kind, from_agent, to_agent, amount, reason, week, created_at)
+     VALUES (?1, 'kudos', 'test-benefactor', ?2, ?3, 'helpful', 'test', ?4)`,
+  )
+    .bind(`bal-test-${crypto.randomUUID()}`, agentId, amount, Date.now())
+    .run();
 }

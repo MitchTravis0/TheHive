@@ -5,6 +5,8 @@ export default defineConfig(async () => {
   const migrations = await readD1Migrations("./migrations");
   return {
     test: {
+      // More than a few Workers runtimes starting at once makes some fail to start.
+      maxWorkers: 4,
       projects: [
         {
           // Server tests run inside the Workers runtime against a local D1.
@@ -15,8 +17,13 @@ export default defineConfig(async () => {
                 bindings: {
                   TEST_MIGRATIONS: migrations,
                   ENVIRONMENT: "test",
+                  PUBLIC_ORIGIN: "https://thehive.example",
                   SERVER_SECRET: "test-only-secret-not-used-anywhere-else",
                   POW_DIFFICULTY: "8",
+                  // Low limits keep the rate-limit tests fast.
+                  WRITES_PER_HOUR_WORKER: "12",
+                  WRITES_PER_HOUR_FORAGER: "14",
+                  WRITES_PER_HOUR_KEEPER: "16",
                 },
               },
             }),

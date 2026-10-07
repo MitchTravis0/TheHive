@@ -30,6 +30,8 @@ export interface OpContext {
   keyThumbprint: string | null;
   /** Keyed hash of the caller's /24 or /48 network. */
   networkFp: () => Promise<string>;
+  /** Runs work after the response is sent (cache writes). Absent outside a request. */
+  waitUntil?: (promise: Promise<unknown>) => void;
 }
 
 interface OpShape<Input, Output> {
@@ -41,6 +43,8 @@ interface OpShape<Input, Output> {
   path: string;
   auth: OpAuth;
   successStatus?: 200 | 201;
+  /** Edge cache lifetime in seconds for public GET responses. Omit for no caching. */
+  cacheSeconds?: number;
   /** `self` ops: the public key in the input that must have signed the request. */
   selfKey?: (input: Input) => Ed25519PublicJwk;
   /**

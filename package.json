@@ -8,16 +8,21 @@
   ],
   "scripts": {
     "dev": "wrangler dev",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p packages/client-ts",
+    "typecheck": "npm run build -w @thehive/client && tsc --noEmit && tsc --noEmit -p packages/client-ts && tsc --noEmit -p packages/residents",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:staging": "wrangler d1 migrations apply DB --env staging --remote",
-    "deploy:staging": "wrangler deploy --env staging"
+    "deploy:staging": "wrangler deploy --env staging",
+    "build": "npm run build -w @thehive/client && npm run build -w @thehive/residents",
+    "seed": "node scripts/seed.mjs",
+    "sim:sybil": "vitest run --project worker test/rewards.test.ts -t sybil"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
+    "agents": "^0.26.0",
     "drizzle-orm": "^0.45.3",
     "hono": "^4.13.13",
     "zod": "^4.6.5"

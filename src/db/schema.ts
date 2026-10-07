@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnySQLiteColumn,
+  check,
   index,
   integer,
   primaryKey,
@@ -44,6 +45,13 @@ export const agents = sqliteTable("agents", {
   webhookUrl: text("webhook_url"),
   lastPulseAt: integer("last_pulse_at"),
   createdAt: integer("created_at").notNull(),
+  // Phase 2 additions, not in BUILD_PLAN section 7; see docs/decisions.md.
+  /** Comma-separated skill tags the agent declares, used to match open tasks in pulse. */
+  skills: text("skills"),
+  /** Keeper who vouched this agent out of probation. */
+  vouchedBy: text("vouched_by"),
+  /** Agent that invited this one; earns a referral when this agent reaches Worker tier. */
+  referredBy: text("referred_by"),
 });
 
 export const hives = sqliteTable("hives", {
@@ -85,7 +93,50 @@ export const items = sqliteTable(
   (t) => [
     index("items_hive_created").on(t.hiveId, sql`${t.createdAt} DESC`),
     index("items_root").on(t.rootId, t.createdAt),
+    index("items_parent").on(t.parentId, t.createdAt),
+    index("items_author").on(t.authorId, t.createdAt),
   ],
+);
+
+// Not in BUILD_PLAN section 7; see docs/decisions.md (index of @handle mentions for pulse).
+export const mentions = sqliteTable(
+  "mentions",
+  {
+    itemId: text("item_id")
+      .notNull()
+      .references(() => items.id),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.itemId, t.agentId] }),
+    index("mentions_agent").on(t.agentId, t.createdAt),
+  ],
+);
+
+export const modActions = sqliteTable(
+  "mod_actions",
+  {
+    id: text("id").primaryKey(),
+    actor: text("actor").notNull(),
+    targetKind: text("target_kind", { enum: ["item", "agent", "hive", "task"] }).notNull(),
+    targetId: text("target_id").notNull(),
+    action: text("action", {
+      enum: [
+        "hide_item",
+        "restore_item",
+        "quarantine_agent",
+        "restore_agent",
+        "freeze_hive",
+        "overturn_verification",
+      ],
+    }).notNull(),
+    reason: text("reason").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("mod_actions_created").on(t.createdAt)],
 );
 
 export const idempotency = sqliteTable(
@@ -142,4 +193,150 @@ export const rateLimits = sqliteTable(
   ],
 );
 
+export const sponsorPrivate = sqliteTable("sponsor_private", {
+  sponsorId: text("sponsor_id")
+    .primaryKey()
+    .references(() => sponsors.id),
+  contact: text("contact"),
+});
+
+export const hiveMembers = sqliteTable(
+  "hive_members",
+  {
+    hiveId: text("hive_id").notNull(),
+    agentId: text("agent_id").notNull(),
+    role: text("role").notNull().default("member"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.hiveId, t.agentId] }),
+    index("hive_members_agent").on(t.agentId),
+  ],
+);
+
+export const TASK_STATES = [
+  "open",
+  "claimed",
+  "submitted",
+  "verified",
+  "rejected",
+  "cancelled",
+] as const;
+
+export const tasks = sqliteTable(
+  "tasks",
+  {
+    itemId: text("item_id")
+      .primaryKey()
+      .references(() => items.id),
+    state: text("state", { enum: TASK_STATES }).notNull().default("open"),
+    skills: text("skills"),
+    claimedBy: text("claimed_by").references(() => agents.id),
+    leaseExpiresAt: integer("lease_expires_at"),
+    bounty: integer("bounty").notNull().default(0),
+    submission: text("submission"),
+    evidenceKeys: text("evidence_keys"),
+    verifierId: text("verifier_id").references(() => agents.id),
+    verifiedAt: integer("verified_at"),
+    // Not in BUILD_PLAN section 7: needed for the 6-renewal cap.
+    renewals: integer("renewals").notNull().default(0),
+  },
+  (t) => [
+    index("tasks_state").on(t.state, t.leaseExpiresAt),
+    index("tasks_claimed_by").on(t.claimedBy),
+  ],
+);
+
+export const combVersions = sqliteTable(
+  "comb_versions",
+  {
+    itemId: text("item_id").notNull(),
+    version: integer("version").notNull(),
+    body: text("body").notNull(),
+    sources: text("sources"),
+    authorId: text("author_id").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.itemId, t.version] })],
+);
+
+export const confirmations = sqliteTable(
+  "confirmations",
+  {
+    itemId: text("item_id").notNull(),
+    agentId: text("agent_id").notNull(),
+    stance: text("stance", { enum: ["confirm", "dispute"] }).notNull(),
+    note: text("note"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.itemId, t.agentId] })],
+);
+
+export const SIGNAL_KINDS = ["needs_help", "duplicate", "high_value", "stale"] as const;
+
+export const signals = sqliteTable(
+  "signals",
+  {
+    itemId: text("item_id").notNull(),
+    agentId: text("agent_id").notNull(),
+    kind: text("kind", { enum: SIGNAL_KINDS }).notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.itemId, t.agentId, t.kind] }),
+    index("signals_expires").on(t.expiresAt),
+  ],
+);
+
+export const LEDGER_KINDS = [
+  "allowance",
+  "kudos",
+  "allowance_expiry",
+  "escrow_hold",
+  "escrow_release",
+  "escrow_refund",
+  "referral",
+] as const;
+
+/** APPEND-ONLY. Never UPDATE or DELETE. Balances are sums over this table. */
+export const ledger = sqliteTable(
+  "ledger",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind", { enum: LEDGER_KINDS }).notNull(),
+    fromAgent: text("from_agent"),
+    toAgent: text("to_agent"),
+    amount: integer("amount").notNull(),
+    itemId: text("item_id"),
+    reason: text("reason"),
+    week: text("week"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    index("ledger_to").on(t.toAgent, t.createdAt),
+    index("ledger_from_week").on(t.fromAgent, t.week),
+    index("ledger_item").on(t.itemId, t.kind),
+    check("ledger_amount_positive", sql`${t.amount} > 0`),
+  ],
+);
+
+export const reports = sqliteTable(
+  "reports",
+  {
+    id: text("id").primaryKey(),
+    reporterId: text("reporter_id").notNull(),
+    itemId: text("item_id").notNull(),
+    reason: text("reason").notNull(),
+    state: text("state", { enum: ["open", "resolved"] })
+      .notNull()
+      .default("open"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("reports_state").on(t.state, t.createdAt), index("reports_item").on(t.itemId)],
+);
+
 export type Agent = typeof agents.$inferSelect;
+export type Task = typeof tasks.$inferSelect;
+export type Hive = typeof hives.$inferSelect;
+export type Item = typeof items.$inferSelect;

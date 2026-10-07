@@ -1,7 +1,5 @@
-import { eq } from "drizzle-orm";
 import type { Context, Hono } from "hono";
-import { z } from "zod";
-import { agentWriteRule, enforceRateLimit, networkFingerprint } from "../auth/ratelimit";
+import { networkFingerprint } from "../auth/ratelimit";
 import {
   commitNonce,
   type Ed25519PublicJwk,
@@ -11,27 +9,27 @@ import {
   verifySignature,
 } from "../auth/signature";
 import { type Env, loadConfig } from "../config";
-import { createDb, type Db } from "../db/client";
-import { type Agent, agents } from "../db/schema";
+import { createDb } from "../db/client";
 import { HiveError } from "../errors";
 import type { Bytes } from "../lib/encoding";
 import type { Op, OpContext } from "../ops/define";
 import { parseIdempotencyKey, withIdempotency } from "../ops/idempotency";
+import { authenticateAgent, executeOp, type ExecuteResult, isWrite, parseInput } from "../ops/run";
+import { z } from "zod";
 
 export type AppEnv = { Bindings: Env };
 
 /**
- * Thin REST surface: turns an HTTP request into an op call. All the request plumbing shared by
- * every op lives here (body limits, signature verification, rate limits, idempotency, input and
- * output validation). Op-specific logic belongs in src/ops/.
+ * Thin REST surface: turns an HTTP request into an op call. Op logic lives in src/ops/; the
+ * shared pipeline (signature, rate limit, idempotency, validation) lives in src/ops/run.ts.
  */
 
-async function readBody(c: Context<AppEnv>, maxBytes: number): Promise<Bytes> {
+export async function readBody(c: Context<AppEnv>, maxBytes: number): Promise<Bytes> {
   const tooLarge = new HiveError(
     413,
     "body_too_large",
     `The request body is larger than ${maxBytes} bytes.`,
-    "Send a smaller body. Post long material as several items or as task evidence.",
+    "Send a smaller body. Post long material as several items.",
   );
   if (Number(c.req.header("content-length") ?? 0) > maxBytes) throw tooLarge;
   const body = new Uint8Array(await c.req.arrayBuffer());
@@ -39,7 +37,7 @@ async function readBody(c: Context<AppEnv>, maxBytes: number): Promise<Bytes> {
   return body;
 }
 
-function parseJsonObject(body: Bytes): Record<string, unknown> {
+export function parseJsonObject(body: Bytes): Record<string, unknown> {
   if (body.length === 0) return {};
   const invalid = new HiveError(
     400,
@@ -57,30 +55,27 @@ function parseJsonObject(body: Bytes): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-function parseInput(op: Op, raw: Record<string, unknown>): unknown {
-  const result = op.input.safeParse(raw);
-  if (result.success) return result.data;
-  const issues = result.error.issues
-    .slice(0, 8)
-    .map((issue) => `${issue.path.join(".") || "(body)"}: ${issue.message}`)
-    .join("; ");
-  throw new HiveError(
-    400,
-    "invalid_input",
-    `Input failed validation. ${issues}`,
-    "Correct the listed fields and send the request again with a fresh signature.",
-  );
-}
-
-function agentResolver(db: Db, found: { agent: Agent | null }) {
-  return async (keyid: string): Promise<KeyResolution> => {
-    const [agent] = await db.select().from(agents).where(eq(agents.keyThumbprint, keyid)).limit(1);
-    if (!agent) return { ok: false, reason: "unknown" };
-    if (agent.status !== "active" && agent.status !== "probation") {
-      return { ok: false, reason: "inactive" };
-    }
-    found.agent = agent;
-    return { ok: true, publicKey: JSON.parse(agent.publicKey) as Ed25519PublicJwk };
+export function buildContext(c: Context<AppEnv>, now: number): OpContext {
+  let fingerprint: Promise<string> | undefined;
+  return {
+    env: c.env,
+    config: loadConfig(c.env),
+    db: createDb(c.env.DB),
+    now,
+    agent: null,
+    keyThumbprint: null,
+    networkFp: () =>
+      (fingerprint ??= networkFingerprint(
+        c.env.SERVER_SECRET ?? "",
+        c.req.header("cf-connecting-ip") ?? null,
+      )),
+    waitUntil: (promise) => {
+      try {
+        c.executionCtx.waitUntil(promise);
+      } catch {
+        // No execution context (some tests): let the promise settle on its own.
+      }
+    },
   };
 }
 
@@ -91,112 +86,89 @@ function selfResolver(publicKey: Ed25519PublicJwk) {
       : { ok: false, reason: "mismatch" };
 }
 
+/** Registration: the key that must have signed the request is inside the body. */
+async function executeSelfOp(
+  op: Op,
+  ctx: OpContext,
+  c: Context<AppEnv>,
+  body: Bytes,
+  raw: Record<string, unknown>,
+): Promise<ExecuteResult> {
+  const input = parseInput(op, raw);
+  if (!op.selfKey) throw new Error(`op ${op.name} has no selfKey`);
+  const verified = await verifySignature({
+    method: c.req.method,
+    url: c.req.url,
+    headers: c.req.raw.headers,
+    body,
+    now: ctx.now,
+    maxWindowSeconds: ctx.config.signatureWindowSeconds,
+    resolveKey: selfResolver(op.selfKey(input)),
+    isNonceSeen: nonceLookup(ctx.db),
+  });
+  ctx.keyThumbprint = verified.keyThumbprint;
+  // Proof-of-work is checked before the first database write.
+  await op.precheck?.(ctx, input);
+  await commitNonce(ctx.db, verified);
+  return withIdempotency(
+    ctx.db,
+    {
+      scope: `key:${verified.keyThumbprint}`,
+      key: parseIdempotencyKey(c.req.header("idempotency-key")),
+      requestHash: `${op.method} ${new URL(c.req.url).pathname} ${verified.bodyDigest}`,
+      ttlMs: ctx.config.idempotencyTtlMs,
+      now: ctx.now,
+    },
+    async () => ({
+      status: op.successStatus ?? 200,
+      body: z.parse(op.output, await op.handler(ctx, input)),
+    }),
+  );
+}
+
 export function mountOp(app: Hono<AppEnv>, op: Op): void {
-  const isWrite = op.method !== "GET";
+  const write = isWrite(op);
 
   app.on(op.method, op.path, async (c) => {
-    const config = loadConfig(c.env);
-    const db = createDb(c.env.DB);
     const now = Date.now();
-    const body = isWrite ? await readBody(c, config.maxRequestBytes) : new Uint8Array();
-
-    let fingerprint: Promise<string> | undefined;
-    const ctx: OpContext = {
-      env: c.env,
-      config,
-      db,
-      now,
-      agent: null,
-      keyThumbprint: null,
-      networkFp: () =>
-        (fingerprint ??= networkFingerprint(
-          c.env.SERVER_SECRET ?? "",
-          c.req.header("cf-connecting-ip") ?? null,
-        )),
-    };
-
+    const ctx = buildContext(c, now);
+    const body = write ? await readBody(c, ctx.config.maxRequestBytes) : new Uint8Array();
     const rawInput = (): Record<string, unknown> => ({
       ...c.req.query(),
-      ...(isWrite ? parseJsonObject(body) : {}),
+      ...(write ? parseJsonObject(body) : {}),
       ...c.req.param(),
     });
-    const respond = async (run: () => Promise<unknown>) => ({
-      status: op.successStatus ?? 200,
-      body: z.parse(op.output, await run()),
-    });
-    const signatureArgs = {
-      method: c.req.method,
-      url: c.req.url,
-      headers: c.req.raw.headers,
-      body,
-      now,
-      maxWindowSeconds: config.signatureWindowSeconds,
-      isNonceSeen: nonceLookup(db),
-    };
 
-    let input: unknown;
-    let idempotencyScope: string | null = null;
-    let bodyDigest = "";
-
-    if (op.auth === "agent") {
-      const found: { agent: Agent | null } = { agent: null };
-      const verified = await verifySignature({
-        ...signatureArgs,
-        resolveKey: agentResolver(db, found),
-      });
-      const agent = found.agent;
-      if (!agent) throw new Error("verified signature without an agent");
-      await commitNonce(db, verified);
-      if (isWrite) {
-        await enforceRateLimit(
-          db,
-          agentWriteRule(config, agent.id, agent.tier),
-          now,
-          `writes per hour at tier ${agent.tier}`,
-        );
-      }
-      ctx.agent = agent;
-      ctx.keyThumbprint = verified.keyThumbprint;
-      idempotencyScope = agent.id;
-      bodyDigest = verified.bodyDigest;
-      input = parseInput(op, rawInput());
-    } else if (op.auth === "self") {
-      // The key is in the body, so the body is parsed first, then verified against it.
-      input = parseInput(op, rawInput());
-      if (!op.selfKey) throw new Error(`op ${op.name} has no selfKey`);
-      const verified = await verifySignature({
-        ...signatureArgs,
-        resolveKey: selfResolver(op.selfKey(input)),
-      });
-      ctx.keyThumbprint = verified.keyThumbprint;
-      await op.precheck?.(ctx, input);
-      await commitNonce(db, verified);
-      idempotencyScope = `key:${verified.keyThumbprint}`;
-      bodyDigest = verified.bodyDigest;
+    let result: ExecuteResult;
+    if (op.auth === "self") {
+      result = await executeSelfOp(op, ctx, c, body, rawInput());
     } else {
-      input = parseInput(op, rawInput());
+      let requestHash: string | undefined;
+      if (op.auth === "agent") {
+        const { agent, verified } = await authenticateAgent(
+          ctx.db,
+          ctx.config,
+          { method: c.req.method, url: c.req.url, headers: c.req.raw.headers, body },
+          now,
+          c.env.METRICS,
+        );
+        ctx.agent = agent;
+        ctx.keyThumbprint = verified.keyThumbprint;
+        requestHash = `${op.method} ${new URL(c.req.url).pathname} ${verified.bodyDigest}`;
+      }
+      result = await executeOp(op, ctx, rawInput, {
+        idempotencyKey: c.req.header("idempotency-key"),
+        requestHash,
+      });
     }
 
-    if (op.auth !== "self") await op.precheck?.(ctx, input);
-
-    if (!isWrite || idempotencyScope === null) {
-      const result = await respond(() => op.handler(ctx, input));
-      return c.json(result.body as object, result.status as 200);
-    }
-
-    const result = await withIdempotency(
-      db,
-      {
-        scope: idempotencyScope,
-        key: parseIdempotencyKey(c.req.header("idempotency-key")),
-        requestHash: `${op.method} ${new URL(c.req.url).pathname} ${bodyDigest}`,
-        ttlMs: config.idempotencyTtlMs,
-        now,
-      },
-      () => respond(() => op.handler(ctx, input)),
-    );
-    c.header("Cache-Control", "no-store");
     if (result.replayed) c.header("Idempotency-Replayed", "true");
+    c.header(
+      "Cache-Control",
+      op.auth === "public" && !write && op.cacheSeconds
+        ? `public, max-age=${op.cacheSeconds}, s-maxage=${op.cacheSeconds}`
+        : "no-store",
+    );
     return c.json(result.body as object, result.status as 200);
   });
 }

@@ -18,3 +18,22 @@ export function isUniqueViolation(error: unknown, target: string): boolean {
   }
   return false;
 }
+
+/** True when any error in the cause chain mentions `text`. */
+export function errorMentions(error: unknown, text: string): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current instanceof Error; depth++) {
+    if (current.message.includes(text)) return true;
+    current = current.cause;
+  }
+  return false;
+}
+
+/** Converts a Drizzle statement to a raw D1 one, so both kinds can share a single batch. */
+export function toD1(
+  d1: D1Database,
+  statement: { toSQL(): { sql: string; params: unknown[] } },
+): D1PreparedStatement {
+  const { sql, params } = statement.toSQL();
+  return d1.prepare(sql).bind(...params);
+}

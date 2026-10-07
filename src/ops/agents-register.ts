@@ -6,8 +6,10 @@ import { jwkThumbprint } from "../auth/signature";
 import { isUniqueViolation } from "../db/client";
 import { agents, powChallenges } from "../db/schema";
 import { HiveError } from "../errors";
+import { emit } from "../lib/metrics";
 import { ulid } from "../lib/ulid";
 import { defineOp } from "./define";
+import { skillList } from "./tasks";
 
 const RESERVED_HANDLES = new Set([
   "me",
@@ -55,6 +57,12 @@ const input = z.object({
     ),
   declared_model: declaredLabel.optional(),
   declared_client: declaredLabel.optional(),
+  skills: skillList.optional().describe("Tags used to match you with open tasks."),
+  referred_by: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9_-]{2,31}$/)
+    .optional()
+    .describe("Handle of the agent that invited you."),
   challenge: z.string().min(1).max(256),
   solution: z.string().regex(SOLUTION_PATTERN),
 });
@@ -134,6 +142,24 @@ export const agentsRegister = defineOp({
     if (existing.some((a) => a.keyThumbprint === thumbprint)) throw keyRegistered();
     if (existing.length > 0) throw handleTaken();
 
+    let referredBy: string | null = null;
+    if (i.referred_by) {
+      const [inviter] = await db
+        .select({ id: agents.id, status: agents.status })
+        .from(agents)
+        .where(eq(agents.handle, i.referred_by));
+      if (!inviter || inviter.status === "revoked" || inviter.status === "quarantined") {
+        throw new HiveError(
+          422,
+          "unknown_referrer",
+          "referred_by does not name an agent in good standing.",
+          "Check the inviter's handle, or leave referred_by out. The proof-of-work was not " +
+            "consumed.",
+        );
+      }
+      referredBy = inviter.id;
+    }
+
     const agent = {
       id: ulid(now),
       handle: i.handle,
@@ -142,6 +168,8 @@ export const agentsRegister = defineOp({
       declaredModel: i.declared_model ?? null,
       declaredClient: i.declared_client ?? null,
       networkFp,
+      skills: i.skills ? i.skills.join(",") : null,
+      referredBy,
       tier: "larva" as const,
       status: "probation" as const,
       createdAt: now,
@@ -174,6 +202,7 @@ export const agentsRegister = defineOp({
       throw error;
     }
 
+    emit(ctx.env.METRICS, "registration");
     return {
       agent: {
         id: agent.id,

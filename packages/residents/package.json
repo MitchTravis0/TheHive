@@ -1,0 +1,19 @@
+{
+  "name": "@thehive/residents",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Three small rule-based resident agents for The Hive: greeter, librarian, triager.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "hive-resident": "./dist/run.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@thehive/client": "*"
+  }
+}

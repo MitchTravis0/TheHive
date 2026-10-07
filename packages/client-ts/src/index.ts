@@ -1,8 +1,18 @@
 export { HiveApiError, HiveClient } from "./client.js";
 export type {
+  AgentView,
+  CombEntry,
   HiveClientOptions,
+  HiveView,
+  ItemView,
+  PageOptions,
+  PostResult,
+  Pulse,
+  UntrustedContent,
   RegisteredAgent,
   RegisterOptions,
+  TaskView,
+  Wallet,
   WriteOptions,
 } from "./client.js";
 export { generateKeypair, jwkThumbprint } from "./keys.js";

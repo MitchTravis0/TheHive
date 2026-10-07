@@ -3,6 +3,16 @@ import { z } from "zod";
 /** Bindings and vars the Worker receives. Vars arrive as strings; `loadConfig` types them. */
 export interface Env {
   DB: D1Database;
+  /** R2 bucket for backups (and, from Phase 2, task evidence). Optional until it is created. */
+  FILES?: R2Bucket;
+  /** Analytics Engine dataset. Optional: metrics are skipped when it is absent. */
+  METRICS?: AnalyticsEngineDataset;
+  /** Hostname that serves the admin handlers and nothing else, e.g. `admin.thehive.example`. */
+  ADMIN_HOSTNAME?: string;
+  /** Cloudflare Access team domain, e.g. `myteam.cloudflareaccess.com`. */
+  ACCESS_TEAM_DOMAIN?: string;
+  /** Audience (AUD) tag of the Access application that protects the admin hostname. */
+  ACCESS_AUD?: string;
   /** Server-side secret for PoW challenge MACs and network fingerprints. Never sent to a client. */
   SERVER_SECRET?: string;
   ENVIRONMENT?: string;
@@ -20,6 +30,24 @@ export interface Env {
   WRITES_PER_HOUR_WORKER?: string;
   WRITES_PER_HOUR_FORAGER?: string;
   WRITES_PER_HOUR_KEEPER?: string;
+  LEASE_HOURS?: string;
+  MAX_RENEWALS?: string;
+  LARVA_MAX_BOUNTY?: string;
+  ALLOWANCE_LARVA?: string;
+  ALLOWANCE_WORKER?: string;
+  ALLOWANCE_FORAGER?: string;
+  ALLOWANCE_KEEPER?: string;
+  REFERRAL_NECTAR?: string;
+  PROBATION_DAYS?: string;
+  PROBATION_KUDOS?: string;
+  STANDING_PENALTY?: string;
+  PERCENTILE_WORKER?: string;
+  PERCENTILE_FORAGER?: string;
+  PERCENTILE_KEEPER?: string;
+  /** Queue for background work (classification, embeddings). Optional until it is created. */
+  QUEUE?: Queue;
+  AI?: Ai;
+  VECTORS?: VectorizeIndex;
 }
 
 const flag = (fallback: boolean) =>
@@ -50,6 +78,22 @@ const ConfigSchema = z.object({
   WRITES_PER_HOUR_WORKER: int(60, 1, 100_000),
   WRITES_PER_HOUR_FORAGER: int(120, 1, 100_000),
   WRITES_PER_HOUR_KEEPER: int(240, 1, 100_000),
+
+  // BUILD_PLAN section 9: leases, allowances, probation and standing.
+  LEASE_HOURS: int(4, 1, 168),
+  MAX_RENEWALS: int(6, 0, 100),
+  LARVA_MAX_BOUNTY: int(10, 0, 1_000_000),
+  ALLOWANCE_LARVA: int(10, 0, 100_000),
+  ALLOWANCE_WORKER: int(30, 0, 100_000),
+  ALLOWANCE_FORAGER: int(60, 0, 100_000),
+  ALLOWANCE_KEEPER: int(100, 0, 100_000),
+  REFERRAL_NECTAR: int(5, 0, 100_000),
+  PROBATION_DAYS: int(7, 0, 365),
+  PROBATION_KUDOS: int(3, 0, 1000),
+  STANDING_PENALTY: z.coerce.number().min(0).max(1).default(0.02),
+  PERCENTILE_WORKER: int(40, 0, 100),
+  PERCENTILE_FORAGER: int(75, 0, 100),
+  PERCENTILE_KEEPER: int(95, 0, 100),
 });
 
 export type Tier = "larva" | "worker" | "forager" | "keeper";
@@ -67,6 +111,15 @@ export interface Config {
   maxRequestBytes: number;
   registrationsPerNetworkPerDay: number;
   writesPerHour: Record<Tier, number>;
+  leaseMs: number;
+  maxRenewals: number;
+  larvaMaxBounty: number;
+  weeklyAllowance: Record<Tier, number>;
+  referralNectar: number;
+  probationMs: number;
+  probationKudos: number;
+  standingPenalty: number;
+  tierPercentile: { worker: number; forager: number; keeper: number };
 }
 
 export function loadConfig(env: Env): Config {
@@ -88,6 +141,24 @@ export function loadConfig(env: Env): Config {
       worker: v.WRITES_PER_HOUR_WORKER,
       forager: v.WRITES_PER_HOUR_FORAGER,
       keeper: v.WRITES_PER_HOUR_KEEPER,
+    },
+    leaseMs: v.LEASE_HOURS * 3_600_000,
+    maxRenewals: v.MAX_RENEWALS,
+    larvaMaxBounty: v.LARVA_MAX_BOUNTY,
+    weeklyAllowance: {
+      larva: v.ALLOWANCE_LARVA,
+      worker: v.ALLOWANCE_WORKER,
+      forager: v.ALLOWANCE_FORAGER,
+      keeper: v.ALLOWANCE_KEEPER,
+    },
+    referralNectar: v.REFERRAL_NECTAR,
+    probationMs: v.PROBATION_DAYS * 86_400_000,
+    probationKudos: v.PROBATION_KUDOS,
+    standingPenalty: v.STANDING_PENALTY,
+    tierPercentile: {
+      worker: v.PERCENTILE_WORKER,
+      forager: v.PERCENTILE_FORAGER,
+      keeper: v.PERCENTILE_KEEPER,
     },
   };
 }

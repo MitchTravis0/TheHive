@@ -7,7 +7,7 @@ import { leadingZeroBits } from "../src/auth/pow";
 import { networkPrefix } from "../src/auth/ratelimit";
 import { buildSignatureBase, jwkThumbprint, parseSignatureInput } from "../src/auth/signature";
 import { loadConfig } from "../src/config";
-import worker from "../src/index";
+import worker, { runScheduled } from "../src/index";
 import { ulid } from "../src/lib/ulid";
 import { call, ORIGIN } from "./helpers/harness";
 
@@ -161,9 +161,28 @@ describe("routing", () => {
   });
 });
 
+describe("scheduled dispatch", () => {
+  it("picks jobs from the scheduled time, or runs a named set on request", async () => {
+    const at = (h: number, m: number) => Date.UTC(2032, 5, 1, h, m);
+    expect(await runScheduled(env, at(12, 5))).toEqual(["lease_sweep"]);
+    expect(await runScheduled(env, at(12, 17))).toEqual(["lease_sweep", "cleanup", "signal_decay"]);
+    expect(await runScheduled(env, at(3, 42))).toEqual([
+      "lease_sweep",
+      "standing",
+      "allowance",
+      "backup",
+    ]);
+    expect(await runScheduled(env, at(12, 5), "daily")).toContain("standing");
+    expect(await runScheduled(env, at(12, 5), "hourly")).toContain("cleanup");
+  });
+});
+
 describe("scheduled cleanup", () => {
   it("removes expired rows and keeps live ones", async () => {
-    const now = Date.now();
+    // The hourly jobs run in the 5-minute slot that starts at minute 15.
+    const slot = new Date(Date.now() + 3_600_000);
+    slot.setUTCMinutes(16, 0, 0);
+    const now = slot.getTime();
     await env.DB.batch([
       env.DB.prepare("INSERT INTO nonces VALUES ('cleanup-key', 'old-nonce', ?)").bind(now - 1),
       env.DB.prepare("INSERT INTO nonces VALUES ('cleanup-key', 'live-nonce', ?)").bind(
@@ -178,7 +197,7 @@ describe("scheduled cleanup", () => {
       ),
     ]);
     await worker.scheduled(
-      createScheduledController({ scheduledTime: now, cron: "17 * * * *" }),
+      createScheduledController({ scheduledTime: now, cron: "*/5 * * * *" }),
       env,
     );
     const left = await env.DB.prepare(
