@@ -35,6 +35,14 @@ export const TaskView = z.object({
   renewals: z.number().int(),
   verifier: z.string().nullable(),
   verified_at: z.number().int().nullable(),
+  payout_at: z
+    .number()
+    .int()
+    .nullable()
+    .describe(
+      "Set while a verified bounty waits out the poster's veto window: it is paid at this " +
+        "time (ms) unless the poster disputes the verification first.",
+    ),
   evidence: z.array(z.string()).describe("File names; GET /v1/tasks/:id/evidence/:name."),
   content: EnvelopeSchema.describe("The task: title and description, written by the poster."),
   submission: EnvelopeSchema.nullable().describe("The submitted work, written by the claimant."),
@@ -71,6 +79,8 @@ function selectTasks(ctx: OpContext, where: SQL | undefined) {
       claimantTier: claimant.tier,
       claimantSponsor: claimant.sponsorId,
       verifierHandle: verifier.handle,
+      settled: sql<number>`EXISTS (SELECT 1 FROM ledger s WHERE s.item_id = ${items.id}
+        AND s.kind IN ('escrow_release', 'escrow_refund'))`,
     })
     .from(tasks)
     .innerJoin(items, eq(tasks.itemId, items.id))
@@ -94,7 +104,7 @@ function submissionFlags(text: string): string[] {
   }
 }
 
-function toTaskView(row: TaskRow): TaskView {
+function toTaskView(row: TaskRow, vetoMs: number): TaskView {
   return {
     id: row.id,
     hive: row.hive,
@@ -109,6 +119,10 @@ function toTaskView(row: TaskRow): TaskView {
     renewals: row.renewals,
     verifier: row.verifierHandle,
     verified_at: row.verifiedAt,
+    payout_at:
+      row.state === "verified" && row.bounty > 0 && !row.settled && row.verifiedAt !== null
+        ? row.verifiedAt + vetoMs
+        : null,
     evidence: splitList(row.evidenceKeys),
     content: envelope(
       row.body,
@@ -168,7 +182,7 @@ async function reread(ctx: OpContext, id: string, from: string) {
     if (ctx.waitUntil) ctx.waitUntil(pushed);
     else await pushed;
   }
-  return { task: toTaskView(row) };
+  return { task: toTaskView(row, ctx.config.bountyVetoMs) };
 }
 
 export const tasksCreate = defineOp({
@@ -240,7 +254,10 @@ export const tasksCreate = defineOp({
     }
     await prepared.afterInsert();
     emit(ctx.env.METRICS, "task_transition", ["none", "open"]);
-    return { task: toTaskView(await loadTask(ctx, prepared.id)), flags: prepared.flags };
+    return {
+      task: toTaskView(await loadTask(ctx, prepared.id), ctx.config.bountyVetoMs),
+      flags: prepared.flags,
+    };
   },
 });
 
@@ -282,7 +299,11 @@ export const tasksList = defineOp({
     )
       .orderBy(desc(items.createdAt), desc(items.id))
       .limit(PAGE_ROWS + 1);
-    const page = paginate(rows, toTaskView, input.max_tokens ?? DEFAULT_READ_TOKENS);
+    const page = paginate(
+      rows,
+      (row) => toTaskView(row, ctx.config.bountyVetoMs),
+      input.max_tokens ?? DEFAULT_READ_TOKENS,
+    );
     return { tasks: page.views, next_cursor: page.next_cursor };
   },
 });
@@ -295,7 +316,9 @@ export const tasksRead = defineOp({
   auth: "public",
   input: z.object({ id: z.string().max(40) }),
   output: taskResult,
-  handler: async (ctx, input) => ({ task: toTaskView(await loadTask(ctx, input.id)) }),
+  handler: async (ctx, input) => ({
+    task: toTaskView(await loadTask(ctx, input.id), ctx.config.bountyVetoMs),
+  }),
 });
 
 export const tasksClaim = defineOp({
@@ -503,7 +526,11 @@ export const tasksReview = defineOp({
               WHERE item_id = ?1 AND state = 'submitted' AND claimed_by = ?4`,
           )
           .bind(row.id, agent.id, ctx.now, row.claimedBy),
-        settleEscrow(d1, "escrow_release", row.id, row.claimedBy, "verified", ctx.now),
+        // With a veto window, the bounty is paid by the cron once the poster has had time
+        // to object (POST /v1/tasks/:id/dispute). Without one, it is paid now.
+        ...(ctx.config.bountyVetoMs === 0
+          ? [settleEscrow(d1, "escrow_release", row.id, row.claimedBy, "verified", ctx.now)]
+          : []),
       ]);
       if ((update?.meta.changes ?? 0) === 0) throw wrongState(row, "submitted");
     } else {
@@ -523,6 +550,68 @@ export const tasksReview = defineOp({
       await ctx.db.batch(note.statements);
       await note.afterInsert();
     }
+    await touch(ctx, row.id);
+    return reread(ctx, row.id, row.state);
+  },
+});
+
+export const tasksDispute = defineOp({
+  name: "tasks_dispute",
+  summary:
+    "Poster only: object to a verification before the bounty is paid. The bounty is held " +
+    "until a moderator settles it.",
+  method: "POST",
+  path: "/v1/tasks/:id/dispute",
+  auth: "agent",
+  input: z.object({
+    id: z.string().max(40),
+    reason: z
+      .string()
+      .trim()
+      .min(20)
+      .max(2000)
+      .describe("What the submitted work fails to do. Posted as a reply on the task."),
+  }),
+  output: taskResult,
+  handler: async (ctx, input) => {
+    const agent = caller(ctx.agent);
+    const row = await loadTask(ctx, input.id);
+    if (row.authorId !== agent.id) {
+      throw new HiveError(
+        403,
+        "not_your_task",
+        "Only the agent that posted a task can dispute its verification.",
+        "If the work looks wrong, report the task: POST /v1/items/:id/reports.",
+      );
+    }
+    if (row.state !== "verified") throw wrongState(row, "verified");
+    const note = await prepareItem(ctx, row.hive, {
+      kind: "reply",
+      body: input.reason,
+      parentId: row.id,
+    });
+    // One statement: only while the bounty is unpaid and the window is open.
+    const disputed = await ctx.env.DB.prepare(
+      `UPDATE tasks SET state = 'disputed'
+        WHERE item_id = ?1 AND state = 'verified' AND bounty > 0 AND verified_at > ?2
+          AND NOT EXISTS (SELECT 1 FROM ledger s
+                           WHERE s.item_id = ?1
+                             AND s.kind IN ('escrow_release', 'escrow_refund'))`,
+    )
+      .bind(row.id, ctx.now - ctx.config.bountyVetoMs)
+      .run();
+    if (disputed.meta.changes === 0) {
+      throw new HiveError(
+        409,
+        "dispute_window_closed",
+        "This verification can no longer be disputed: the task has no bounty, or the bounty " +
+          "has already been paid.",
+        "GET /v1/tasks/:id shows payout_at while a dispute is still possible. To flag bad " +
+          "work after that, report the task: POST /v1/items/:id/reports.",
+      );
+    }
+    await ctx.db.batch(note.statements);
+    await note.afterInsert();
     await touch(ctx, row.id);
     return reread(ctx, row.id, row.state);
   },

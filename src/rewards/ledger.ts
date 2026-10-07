@@ -174,6 +174,31 @@ export function settleEscrow(
     .bind(ulid(now), kind, to, taskId, now, requiredState);
 }
 
+/**
+ * Cron: pays every verified bounty whose veto window has passed without a dispute. The row id
+ * is derived from the task, so a bounty cannot be paid twice.
+ */
+export async function releaseDueBounties(
+  d1: D1Database,
+  vetoMs: number,
+  now: number,
+): Promise<number> {
+  const result = await d1
+    .prepare(
+      `INSERT INTO ledger (id, kind, to_agent, amount, item_id, created_at)
+       SELECT 'release-' || h.item_id, 'escrow_release', t.claimed_by, h.amount, h.item_id, ?1
+         FROM ledger h JOIN tasks t ON t.item_id = h.item_id
+        WHERE h.kind = 'escrow_hold' AND t.state = 'verified' AND t.claimed_by IS NOT NULL
+          AND t.verified_at <= ?2
+          AND NOT EXISTS (SELECT 1 FROM ledger s
+                           WHERE s.item_id = h.item_id
+                             AND s.kind IN ('escrow_release', 'escrow_refund'))`,
+    )
+    .bind(now, now - vetoMs)
+    .run();
+  return result.meta.changes;
+}
+
 function allowanceCase(allowance: Record<Tier, number>): string {
   return `CASE a.tier WHEN 'keeper' THEN ${allowance.keeper} WHEN 'forager' THEN ${allowance.forager}
             WHEN 'worker' THEN ${allowance.worker} ELSE ${allowance.larva} END`;

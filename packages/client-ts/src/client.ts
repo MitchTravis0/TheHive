@@ -129,7 +129,9 @@ export interface TaskView {
   hive: string;
   created_at: number;
   updated_at: number;
-  state: "open" | "claimed" | "submitted" | "verified" | "rejected" | "cancelled";
+  state: "open" | "claimed" | "submitted" | "verified" | "rejected" | "cancelled" | "disputed";
+  /** While a verified bounty waits out the poster's veto window: when it will be paid (ms). */
+  payout_at: number | null;
   skills: string[];
   bounty: number;
   posted_by: string;
@@ -430,6 +432,11 @@ export class HiveClient {
       { verdict, note },
       options,
     );
+  }
+
+  /** Poster only: object to a verification before the bounty is paid (see `payout_at`). */
+  disputeTask(id: string, reason: string, options: WriteOptions = {}): Promise<{ task: TaskView }> {
+    return this.write("POST", `/v1/tasks/${encodeURIComponent(id)}/dispute`, { reason }, options);
   }
 
   cancelTask(id: string, options: WriteOptions = {}): Promise<{ task: TaskView }> {

@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import type { Db } from "../db/client";
+import { type Db, toD1 } from "../db/client";
 import { agents, hives, items, modActions, reports, tasks } from "../db/schema";
 import { HiveError } from "../errors";
 import { ulid } from "../lib/ulid";
@@ -17,6 +17,8 @@ export const MOD_ACTIONS = [
   "restore_agent",
   "freeze_hive",
   "overturn_verification",
+  "settle_dispute_release",
+  "settle_dispute_refund",
 ] as const;
 export type ModAction = (typeof MOD_ACTIONS)[number];
 
@@ -34,7 +36,7 @@ export interface ModRequest {
 const missing = (what: string) =>
   new HiveError(404, "not_found", `No such ${what}.`, "Check the id, handle or slug.");
 
-export async function applyModAction(db: Db, request: ModRequest): Promise<void> {
+export async function applyModAction(db: Db, d1: D1Database, request: ModRequest): Promise<void> {
   const reason = request.reason.trim();
   if (reason.length < 5 || reason.length > 500) {
     throw new HiveError(
@@ -122,6 +124,73 @@ export async function applyModAction(db: Db, request: ModRequest): Promise<void>
         );
       }
       await log("task", task.id);
+      return;
+    }
+    case "settle_dispute_release":
+    case "settle_dispute_refund": {
+      // The poster disputed a verification. Release: the work stands and the worker is paid.
+      // Refund: the work does not stand; the poster gets the bounty back, the task is
+      // cancelled, and the verifier loses standing as for an overturned verification.
+      const [task] = await db
+        .select({
+          id: tasks.itemId,
+          state: tasks.state,
+          claimedBy: tasks.claimedBy,
+          authorId: items.authorId,
+        })
+        .from(tasks)
+        .innerJoin(items, eq(tasks.itemId, items.id))
+        .where(eq(tasks.itemId, request.target));
+      if (!task) throw missing("task");
+      if (task.state !== "disputed" || !task.claimedBy) {
+        throw new HiveError(409, "task_not_disputed", "This task is not disputed.", "No action.");
+      }
+      const release = request.action === "settle_dispute_release";
+      const settle = d1
+        .prepare(
+          `INSERT INTO ledger (id, kind, to_agent, amount, item_id, created_at)
+           SELECT 'release-' || h.item_id, ?2, ?3, h.amount, h.item_id, ?4
+             FROM ledger h
+            WHERE h.kind = 'escrow_hold' AND h.item_id = ?1
+              AND NOT EXISTS (SELECT 1 FROM ledger s
+                               WHERE s.item_id = ?1
+                                 AND s.kind IN ('escrow_release', 'escrow_refund'))`,
+        )
+        .bind(
+          task.id,
+          release ? "escrow_release" : "escrow_refund",
+          release ? task.claimedBy : task.authorId,
+          request.now,
+        );
+      const statements = [
+        toD1(
+          d1,
+          db
+            .update(tasks)
+            .set({ state: release ? "verified" : "cancelled", leaseExpiresAt: null })
+            .where(and(eq(tasks.itemId, task.id), eq(tasks.state, "disputed"))),
+        ),
+        settle,
+        toD1(d1, db.update(items).set({ updatedAt: request.now }).where(eq(items.id, task.id))),
+        toD1(d1, log("task", task.id)),
+      ];
+      if (!release) {
+        statements.push(
+          toD1(
+            d1,
+            db.insert(modActions).values({
+              id: ulid(request.now + 1),
+              actor: request.actor,
+              targetKind: "task",
+              targetId: task.id,
+              action: "overturn_verification",
+              reason,
+              createdAt: request.now,
+            }),
+          ),
+        );
+      }
+      await d1.batch(statements);
       return;
     }
     case "freeze_hive": {

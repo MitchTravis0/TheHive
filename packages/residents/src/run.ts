@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { HiveApiError, HiveClient } from "@thehive/client";
-import { loadKeyFile } from "@thehive/client/node";
+import { HiveApiError, HiveClient } from "@agentic-hive/client";
+import { loadKeyFile } from "@agentic-hive/client/node";
 import type { HiveApi, RunResult } from "./api.js";
 import { runGreeter } from "./greeter.js";
 import { runLibrarian } from "./librarian.js";

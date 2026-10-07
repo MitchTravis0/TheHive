@@ -5,6 +5,7 @@ import { HiveApiError } from "../packages/client-ts/src/index";
 import { tasks } from "../src/db/schema";
 import { runScheduled } from "../src/index";
 import { sweepExpiredLeases } from "../src/ops/tasks";
+import { releaseDueBounties } from "../src/rewards/ledger";
 import {
   call,
   createHive,
@@ -71,8 +72,19 @@ describe("task lifecycle", () => {
       "Checked all links.",
     );
     expect(verified.task).toMatchObject({ state: "verified", verifier: verifier.agent.handle });
+    // The bounty waits out the poster's veto window before it is paid.
+    const window = 24 * 3_600_000;
+    expect(verified.task.payout_at).toBe((verified.task.verified_at ?? 0) + window);
+    expect((await worker.client.wallet()).wallet.balance).toBe(0);
+    expect(await releaseDueBounties(env.DB, window, Date.now())).toBe(0);
+    expect(await releaseDueBounties(env.DB, window, Date.now() + window + 1000)).toBe(1);
     expect((await worker.client.wallet()).wallet.balance).toBe(8);
     expect((await poster.client.wallet()).wallet).toMatchObject({ balance: 42, escrow_held: 0 });
+    expect((await poster.client.task(created.task.id)).task.payout_at).toBeNull();
+    // Once paid, it is too late to dispute.
+    expect(
+      await rejection(poster.client.disputeTask(created.task.id, "Too late to object to this.")),
+    ).toMatchObject({ status: 409, code: "dispute_window_closed" });
 
     // The note is a reply on the task, and the bounty cannot be paid twice.
     const thread = await poster.client.item(created.task.id);
@@ -83,7 +95,75 @@ describe("task lifecycle", () => {
       status: 409,
       code: "task_wrong_state",
     });
+    expect(await releaseDueBounties(env.DB, window, Date.now() + 2 * window)).toBe(0);
     expect((await worker.client.wallet()).wallet.balance).toBe(8);
+  });
+
+  it("lets the poster dispute a verification, holding the bounty for a moderator", async () => {
+    const { applyModAction } = await import("../src/admin/actions");
+    const { db } = await import("./helpers/harness");
+    const { slug } = await createHive();
+    const far = Date.now() + 30 * 24 * 3_600_000;
+    const run = async (settle: "settle_dispute_release" | "settle_dispute_refund") => {
+      const poster = await registerAs({ tier: "forager", status: "active" });
+      const worker = await registerAgent();
+      const verifier = await registerAs({ tier: "worker", status: "active" });
+      await grantBalance(poster.agent.id, 10);
+      const { task } = await poster.client.createTask(slug, {
+        ...TASK,
+        body: `${TASK.body} ${crypto.randomUUID()}`,
+        bounty: 10,
+      });
+      await worker.client.claimTask(task.id);
+      await worker.client.submitTask(task.id, "Junk that a colluding reviewer will wave through.");
+      await verifier.client.reviewTask(task.id, "verify");
+
+      // Only the poster can dispute, and it needs a reason.
+      expect(
+        await rejection(worker.client.disputeTask(task.id, "I would like to object to this.")),
+      ).toMatchObject({ status: 403, code: "not_your_task" });
+      const disputed = await poster.client.disputeTask(
+        task.id,
+        "The submission does not contain the summaries the task asked for.",
+      );
+      expect(disputed.task).toMatchObject({ state: "disputed", payout_at: null });
+      // A disputed bounty is never paid by the clock.
+      expect(await releaseDueBounties(env.DB, 24 * 3_600_000, far)).toBe(0);
+      expect((await worker.client.wallet()).wallet.balance).toBe(0);
+      expect((await poster.client.wallet()).wallet.escrow_held).toBe(10);
+
+      await applyModAction(db, env.DB, {
+        action: settle,
+        target: task.id,
+        reason: "Settled after reading the submission.",
+        actor: "admin",
+        now: Date.now(),
+      });
+      // Settling twice is refused, and never pays twice.
+      await expect(
+        applyModAction(db, env.DB, {
+          action: "settle_dispute_release",
+          target: task.id,
+          reason: "A second attempt to settle.",
+          actor: "admin",
+          now: Date.now(),
+        }),
+      ).rejects.toMatchObject({ code: "task_not_disputed" });
+      return { poster, worker, task };
+    };
+
+    const released = await run("settle_dispute_release");
+    expect((await released.worker.client.wallet()).wallet.balance).toBe(10);
+    expect((await released.poster.client.task(released.task.id)).task.state).toBe("verified");
+
+    const refunded = await run("settle_dispute_refund");
+    expect((await refunded.worker.client.wallet()).wallet.balance).toBe(0);
+    expect((await refunded.poster.client.wallet()).wallet).toMatchObject({
+      balance: 10,
+      escrow_held: 0,
+    });
+    expect((await refunded.poster.client.task(refunded.task.id)).task.state).toBe("cancelled");
+    expect(await releaseDueBounties(env.DB, 24 * 3_600_000, far)).toBe(0);
   });
 
   it("lets a rejected worker fix and resubmit, keeping the claim", async () => {

@@ -319,7 +319,7 @@ two should rotate separately, give the signing key its own secret before task 4.
 ## 2026-10-06: One-command join and the clients (task 3.5)
 
 `hive join` in `packages/client-ts` generates a key, registers on the public hive and prints
-next steps; `npx @thehive/client join` runs it. Checked from a packed tarball against a local
+next steps; `npx @agentic-hive/client join` runs it. Checked from a packed tarball against a local
 server. `packages/client-py` is the Python port. Neither is published: the npm scope and the
 PyPI name need the owner's accounts. Until then `/skill.md` points at the packages in the
 repository and at the by-hand steps; change it to the `npx` command once they are published.
@@ -335,3 +335,39 @@ response. A write is now about six round trips; p95 on staging is 250 ms.
 **Side effects:** the hourly request counter is keyed by key thumbprint, not agent id. The
 safety scan runs before the hive lookup, so a post with a credential in it to a hive that does
 not exist is refused for the credential.
+
+## 2026-10-06: Poster veto window on bounties (owner decision)
+
+**Plan:** section 9 releases the escrow to the worker on `verified`.
+**Decision (owner):** a veto window, in answer to security review finding 4.
+**Built:**
+
+- A verified task with a bounty is paid by the 5-minute cron once `BOUNTY_VETO_HOURS` (24) have
+  passed since verification. `payout_at` on the task shows when. 0 pays at once, as before.
+- In the window the poster can `POST /v1/tasks/:id/dispute` with a reason (posted as a reply).
+  The task becomes `disputed`, a seventh task state, and is never paid by the clock.
+- A moderator settles it on the admin site: pay the worker (back to `verified`), or refund the
+  poster (the task becomes `cancelled`, and the verifier is penalised as for an overturned
+  verification). Both are in the public moderation log. Settling moves nectar, which is new for
+  the admin; it still cannot post or edit.
+- Tasks without a bounty are unchanged. MCP: `task_review` takes `verdict: "dispute"`.
+- No migration: task state and moderation action are plain text columns.
+
+## 2026-10-06: Terms and contact on /about (task 3.9)
+
+**Plan:** the owner supplies the text.
+**Decision (owner):** the agent wrote it, and all contact goes to the seed agent.
+**Built:** plain-language terms on `/about`, and a contact section naming `@hive-seed`
+(`CONTACT_HANDLE`): reports through the report call, everything else by mentioning the seed
+agent in the `meta` hive. There is no email address.
+**Limits:** the terms were not written or checked by a lawyer. Nothing runs the seed agent on
+a schedule, so a mention is only seen when someone operates that key and checks its pulse. A
+person without an agent has no direct way to reach anyone.
+
+## 2026-10-07: Client package names and license (owner decision)
+
+**Names:** the npm scope `@thehive` belongs to someone else, and "TheHive" is an existing
+security product. The clients are `@agentic-hive/client` on npm and `agentic-hive` on PyPI
+(the Python import is still `thehive`, the command `hive-py`).
+**License:** MIT, for the two client packages only. Section 3's "Open source? Undecided" still
+stands for the server and the rest of the repository, which carry no license.

@@ -15,7 +15,8 @@ import { getState, readOnlyReason, setReadOnly, setState } from "../lib/platform
  * Read-only mode lifts by itself when the projection falls back under 80% (in practice, at the
  * start of the next month). The edge block is only ever lifted by the owner.
  *
- * It needs CF_API_TOKEN and CF_ACCOUNT_ID; without them it does nothing. Prices below were
+ * It needs the secret CF_API_TOKEN and the var CF_ACCOUNT_ID; without them it does nothing.
+ * The zone and the block rule are found by name unless their ids are configured. Prices below were
  * read from the Cloudflare pricing page on 2026-10-06 and cover Workers requests and CPU and
  * D1 rows. Queues, Durable Objects, Workers AI, Vectorize and R2 are not counted: the
  * dashboard billing notifications are the second signal for those.
@@ -42,6 +43,7 @@ const DAY_MS = 86_400_000;
 const GRAPHQL = "https://api.cloudflare.com/client/v4/graphql";
 const API = "https://api.cloudflare.com/client/v4";
 const LEVEL_KEY = "budget_level";
+const CHECK_AT_KEY = "budget_check_at";
 
 /** What a month with this usage costs on Workers Paid, in USD. */
 export function monthlyCostUsd(usage: Usage): number {
@@ -120,7 +122,7 @@ query HiveUsage($account: string!, $from: Time!, $to: Time!, $fromDate: Date!, $
 }`;
 
 /** Account-wide usage for the month so far, from the GraphQL Analytics API. */
-export async function fetchUsage(env: Env, now: number): Promise<Usage> {
+export async function fetchUsage(env: Env, now: number): Promise<Usage & { cpuMeasured: boolean }> {
   const { start } = monthBounds(now);
   const variables = {
     account: env.CF_ACCOUNT_ID,
@@ -151,7 +153,7 @@ export async function fetchUsage(env: Env, now: number): Promise<Usage> {
   if (reply.errors?.length) throw new Error(`analytics API: ${reply.errors[0]?.message}`);
   const account = reply.data?.viewer?.accounts?.[0];
   if (!account) throw new Error("analytics API returned no account");
-  const usage: Usage = { requests: 0, cpuMs: 0, d1RowsRead: 0, d1RowsWritten: 0 };
+  const usage = { requests: 0, cpuMs: 0, d1RowsRead: 0, d1RowsWritten: 0, cpuMeasured: hasCpu };
   for (const group of account.workers ?? []) {
     usage.requests += group.sum?.requests ?? 0;
     usage.cpuMs += (group.sum?.cpuTimeUs ?? 0) / 1000;
@@ -166,40 +168,94 @@ export async function fetchUsage(env: Env, now: number): Promise<Usage> {
 
 interface RulesetReply {
   success?: boolean;
-  result?: { rules?: Record<string, unknown>[] };
+  result?: { id?: string; rules?: Record<string, unknown>[] };
+}
+
+interface KillRule {
+  /** URL of the rule in the Rulesets API. */
+  url: string;
+  rule: Record<string, unknown>;
+}
+
+const DEFAULT_RULE_NAME = "hive-kill-switch";
+
+function apiHeaders(env: Env): Record<string, string> {
+  return { Authorization: `Bearer ${env.CF_API_TOKEN}`, "Content-Type": "application/json" };
 }
 
 /**
- * Switches on the owner's pre-made WAF custom rule that blocks all traffic. The API replaces
- * the whole rule on update, so the rule is read first and sent back with `enabled: true`.
+ * Finds the owner's pre-made WAF custom rule that blocks all traffic. With no ids configured
+ * it is looked up: the zone is the one the token can see whose name ends the public host, and
+ * the rule is the custom rule named `hive-kill-switch` (or `CF_KILL_RULE_NAME`).
  */
-export async function enableEdgeBlock(env: Env): Promise<boolean> {
-  if (!env.CF_ZONE_ID || !env.CF_KILL_RULESET_ID || !env.CF_KILL_RULE_ID) return false;
-  const headers = {
-    Authorization: `Bearer ${env.CF_API_TOKEN}`,
-    "Content-Type": "application/json",
-  };
-  const base = `${API}/zones/${env.CF_ZONE_ID}/rulesets/${env.CF_KILL_RULESET_ID}`;
-  const current = await budgetDeps.fetcher(base, { headers });
-  if (!current.ok) throw new Error(`rulesets API returned ${current.status}`);
-  const rule = (await current.json<RulesetReply>()).result?.rules?.find(
-    (candidate) => candidate.id === env.CF_KILL_RULE_ID,
+export async function findKillRule(env: Env): Promise<KillRule> {
+  const headers = apiHeaders(env);
+  let zoneId = env.CF_ZONE_ID;
+  if (!zoneId) {
+    const host = new URL(env.PUBLIC_ORIGIN ?? "https://thehive.example").hostname;
+    const listed = await budgetDeps.fetcher(`${API}/zones?per_page=50`, { headers });
+    if (!listed.ok) throw new Error(`zones API returned ${listed.status}`);
+    const zones = (await listed.json<{ result?: { id: string; name: string }[] }>()).result ?? [];
+    zoneId = zones.find((zone) => host === zone.name || host.endsWith(`.${zone.name}`))?.id;
+    if (!zoneId) throw new Error("the token cannot see the zone of the public host");
+  }
+  const rulesets = `${API}/zones/${zoneId}/rulesets`;
+  const current = await budgetDeps.fetcher(
+    env.CF_KILL_RULESET_ID
+      ? `${rulesets}/${env.CF_KILL_RULESET_ID}`
+      : `${rulesets}/phases/http_request_firewall_custom/entrypoint`,
+    { headers },
   );
-  if (!rule) throw new Error("the kill-switch rule was not found in the ruleset");
-  if (rule.enabled === true) return true;
-  const updated = await budgetDeps.fetcher(`${base}/rules/${env.CF_KILL_RULE_ID}`, {
+  if (!current.ok) throw new Error(`rulesets API returned ${current.status}`);
+  const ruleset = (await current.json<RulesetReply>()).result;
+  const name = env.CF_KILL_RULE_NAME ?? DEFAULT_RULE_NAME;
+  const rule = ruleset?.rules?.find((candidate) =>
+    env.CF_KILL_RULE_ID ? candidate.id === env.CF_KILL_RULE_ID : candidate.description === name,
+  );
+  const rulesetId = env.CF_KILL_RULESET_ID ?? ruleset?.id;
+  if (!rule || typeof rule.id !== "string" || !rulesetId) {
+    throw new Error("the kill-switch rule was not found in the zone's custom rules");
+  }
+  return { url: `${rulesets}/${rulesetId}/rules/${rule.id}`, rule };
+}
+
+/** Writes the rule back with `enabled` set. The API replaces the whole rule on update. */
+async function writeKillRule(env: Env, found: KillRule, enabled: boolean): Promise<void> {
+  const { rule } = found;
+  const updated = await budgetDeps.fetcher(found.url, {
     method: "PATCH",
-    headers,
+    headers: apiHeaders(env),
     body: JSON.stringify({
       action: rule.action,
       expression: rule.expression,
       description: rule.description,
       ...(rule.action_parameters ? { action_parameters: rule.action_parameters } : {}),
-      enabled: true,
+      enabled,
     }),
   });
   if (!updated.ok) throw new Error(`rule update returned ${updated.status}`);
+}
+
+/** Switches the kill-switch rule on, so requests stop reaching (and being billed to) the Worker. */
+export async function enableEdgeBlock(env: Env): Promise<boolean> {
+  const found = await findKillRule(env);
+  if (found.rule.enabled !== true) await writeKillRule(env, found, true);
   return true;
+}
+
+/**
+ * Proves the guard could flip the switch, without flipping it: finds the rule and writes it
+ * back unchanged. Returns what it found, or the reason it failed.
+ */
+export async function checkEdgeBlock(env: Env): Promise<string> {
+  try {
+    const found = await findKillRule(env);
+    const enabled = found.rule.enabled === true;
+    await writeKillRule(env, found, enabled);
+    return `ok: rule found and writable, currently ${enabled ? "ENABLED" : "disabled"}`;
+  } catch (error) {
+    return `failed: ${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 async function alertOwner(env: Env, text: string): Promise<void> {
@@ -270,6 +326,25 @@ export async function runBudgetGuard(
       );
     }
     if (level === "ok") await alertOwner(env, `The Hive is back under budget: ${summary}.`);
+  }
+  // Once a day, record that the whole chain works: usage can be read and the rule can be
+  // written. Read it with: SELECT value FROM platform_state WHERE key = 'budget_check'.
+  const lastCheck = Number((await getState(env, CHECK_AT_KEY)) ?? 0);
+  if (now - lastCheck >= DAY_MS || now < lastCheck) {
+    await setState(env, CHECK_AT_KEY, String(now), now);
+    await setState(
+      env,
+      "budget_check",
+      JSON.stringify({
+        at: new Date(now).toISOString(),
+        usage,
+        projected_usd: Math.round(projected * 100) / 100,
+        budget_usd: config.monthlyBudgetUsd,
+        level,
+        edge_rule: await checkEdgeBlock(env),
+      }),
+      now,
+    );
   }
   emit(env.METRICS, "budget", [level], [projected, usage.requests]);
   return {

@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "dev": "wrangler dev",
-    "typecheck": "npm run build -w @thehive/client && tsc --noEmit && tsc --noEmit -p packages/client-ts && tsc --noEmit -p packages/residents",
+    "typecheck": "npm run build -w @agentic-hive/client && tsc --noEmit && tsc --noEmit -p packages/client-ts && tsc --noEmit -p packages/residents",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test": "vitest run",
@@ -18,7 +18,7 @@
     "deploy:staging": "wrangler deploy --env staging",
     "db:migrate:production": "wrangler d1 migrations apply DB --env production --remote",
     "deploy:production": "wrangler deploy --env production",
-    "build": "npm run build -w @thehive/client && npm run build -w @thehive/residents",
+    "build": "npm run build -w @agentic-hive/client && npm run build -w @thehive/residents",
     "seed": "node scripts/seed.mjs",
     "sim:sybil": "vitest run --project worker test/rewards.test.ts -t sybil"
   },

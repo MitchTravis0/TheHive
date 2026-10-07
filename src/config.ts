@@ -53,6 +53,8 @@ export interface Env {
   /** Live rooms (one Durable Object per hive). Optional: without it readers poll. */
   HIVE_ROOM?: DurableObjectNamespace<HiveRoom>;
   PROPOSAL_QUORUM?: string;
+  BOUNTY_VETO_HOURS?: string;
+  CONTACT_HANDLE?: string;
   REGISTRATIONS_PER_DAY?: string;
   READS_PER_HOUR?: string;
   // Cost guard (BUILD_PLAN section 13). The budget check is skipped until the token is set.
@@ -64,6 +66,8 @@ export interface Env {
   /** The owner's pre-made, disabled WAF custom rule that blocks all traffic to the hive. */
   CF_KILL_RULESET_ID?: string;
   CF_KILL_RULE_ID?: string;
+  /** Name of that rule, used to find it when no ids are set. Default `hive-kill-switch`. */
+  CF_KILL_RULE_NAME?: string;
   /** Secret, optional. A chat incoming-webhook URL that budget alerts are posted to. */
   ALERT_WEBHOOK_URL?: string;
 }
@@ -117,6 +121,13 @@ const ConfigSchema = z.object({
 
   // Phase 3.
   PROPOSAL_QUORUM: int(3, 1, 10_000),
+  // How long a poster has to object before a verified bounty is paid. 0 pays at once.
+  BOUNTY_VETO_HOURS: int(24, 0, 720),
+  // The agent that /about names as the contact for abuse, takedowns and questions.
+  CONTACT_HANDLE: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9_-]{2,31}$/)
+    .default("hive-seed"),
   // Cost guard (BUILD_PLAN section 13).
   REGISTRATIONS_PER_DAY: int(500, 1, 1_000_000),
   READS_PER_HOUR: int(600, 1, 1_000_000),
@@ -149,6 +160,8 @@ export interface Config {
   standingPenalty: number;
   tierPercentile: { worker: number; forager: number; keeper: number };
   proposalQuorum: number;
+  bountyVetoMs: number;
+  contactHandle: string;
   registrationsPerDay: number;
   signedReadsPerHour: number;
   monthlyBudgetUsd: number;
@@ -194,6 +207,8 @@ export function loadConfig(env: Env): Config {
       keeper: v.PERCENTILE_KEEPER,
     },
     proposalQuorum: v.PROPOSAL_QUORUM,
+    bountyVetoMs: v.BOUNTY_VETO_HOURS * 3_600_000,
+    contactHandle: v.CONTACT_HANDLE,
     registrationsPerDay: v.REGISTRATIONS_PER_DAY,
     signedReadsPerHour: v.READS_PER_HOUR,
     monthlyBudgetUsd: v.MONTHLY_BUDGET_USD,

@@ -6,6 +6,7 @@ import {
   ORIGIN,
   registerAgent,
   grantAllowance,
+  grantBalance,
   registerAs,
   type SignedOptions,
   signedPost,
@@ -123,6 +124,31 @@ const endpoints: Endpoint[] = [
         agent: await registerAs({ tier: "worker", status: "active" }),
         path: `/v1/tasks/${task.id}/review`,
         body: (n) => ({ verdict: "verify", note: `Looks complete, check ${n}.` }),
+      };
+    },
+  },
+  {
+    name: "POST /v1/tasks/:id/dispute",
+    limit: 14,
+    ok: 200,
+    setup: async () => {
+      const { slug } = await createHive();
+      const poster = await registerAs({ tier: "forager", status: "active" });
+      const worker = await registerAgent();
+      const verifier = await registerAs({ tier: "worker", status: "active" });
+      await grantBalance(poster.agent.id, 5);
+      const { task } = await poster.client.createTask(slug, {
+        ...TASK,
+        body: `${TASK.body} ${crypto.randomUUID()}`,
+        bounty: 5,
+      });
+      await worker.client.claimTask(task.id);
+      await worker.client.submitTask(task.id, "Submitted work for review.");
+      await verifier.client.reviewTask(task.id, "verify");
+      return {
+        agent: poster,
+        path: `/v1/tasks/${task.id}/dispute`,
+        body: (n) => ({ reason: `The work does not do what the task asked, point ${n}.` }),
       };
     },
   },

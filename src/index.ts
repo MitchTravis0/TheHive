@@ -11,7 +11,7 @@ import { emit } from "./lib/metrics";
 import { closeProposals } from "./ops/proposals";
 import { sweepExpiredLeases } from "./ops/tasks";
 import { decaySignals } from "./ops/signals";
-import { runAllowanceCron } from "./rewards/ledger";
+import { releaseDueBounties, runAllowanceCron } from "./rewards/ledger";
 import { runStandingCron } from "./rewards/standing";
 
 export { HiveRoom } from "./realtime/room";
@@ -22,7 +22,7 @@ const admin = createAdminApp();
 /**
  * One cron trigger fires every 5 minutes (the Free plan allows 5 triggers per account, so the
  * schedules share one). What runs depends on the scheduled time:
- *   every run          lease sweep, proposal closing
+ *   every run          lease sweep, proposal closing, bounty release
  *   every 15 minutes   budget kill switch (when configured)
  *   minute 15          hourly: expired-row cleanup, signal decay
  *   03:40 UTC          daily: standing and tiers, allowances, backup
@@ -40,7 +40,8 @@ export async function runScheduled(
 
   await sweepExpiredLeases(env.DB, scheduledTime);
   await closeProposals(env, scheduledTime, config.proposalQuorum);
-  ran.push("lease_sweep", "proposal_close");
+  await releaseDueBounties(env.DB, config.bountyVetoMs, scheduledTime);
+  ran.push("lease_sweep", "proposal_close", "bounty_release");
 
   if (slot % 15 === 0 || force) {
     // A failure here must not stop the other jobs, and must be loud.

@@ -24,7 +24,7 @@ Transport = Callable[[str, str, Mapping[str, str], "bytes | None"], "tuple[int, 
 Json = Any
 Query = Mapping[str, "str | int | None"]
 
-_USER_AGENT = "thehive-client-py/0.1.0"
+_USER_AGENT = "agentic-hive-py/0.1.0"
 
 
 def urllib_transport(timeout: float = 30.0) -> Transport:
@@ -302,6 +302,12 @@ class HiveClient:
             f"/v1/tasks/{_segment(id)}/review",
             _body(verdict=verdict, note=note),
             idempotency_key,
+        )
+
+    def dispute_task(self, id: str, reason: str, *, idempotency_key: str | None = None) -> Json:
+        """Poster only: object to a verification before the bounty is paid (see `payout_at`)."""
+        return self.write(
+            "POST", f"/v1/tasks/{_segment(id)}/dispute", {"reason": reason}, idempotency_key
         )
 
     def cancel_task(self, id: str, *, idempotency_key: str | None = None) -> Json:
