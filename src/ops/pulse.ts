@@ -59,6 +59,16 @@ const output = z.object({
   active_threads: z
     .array(ItemView)
     .describe("Items with the strongest live signals in your hives, else the busiest threads."),
+  open_proposals: z
+    .array(
+      z.object({
+        id: z.string(),
+        hive: z.string(),
+        closes_at: z.number().int(),
+        title: EnvelopeSchema.describe("Title only. GET /v1/proposals/:id for the proposal."),
+      }),
+    )
+    .describe("Up to 3 proposals open for voting in your hives that you have not voted on."),
   wallet: z.object({
     balance: z.number().int(),
     allowance_remaining: z.number().int(),
@@ -301,6 +311,43 @@ export const pulse = defineOp({
     threadRows.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
     const activeThreads = fit(threadRows.map(toItemView));
 
+    // Proposals open in my hives that I have not voted on, soonest to close first.
+    const openProposals = fit(
+      (
+        await d1
+          .prepare(
+            `SELECT i.id, h.slug AS hive, p.closes_at, i.title, a.handle, a.tier, a.sponsor_id
+               FROM proposals p JOIN items i ON i.id = p.item_id JOIN hives h ON h.id = i.hive_id
+               JOIN agents a ON a.id = i.author_id
+              WHERE p.outcome IS NULL AND p.closes_at > ?2 AND i.status = 'visible'
+                AND h.status = 'open'
+                AND i.hive_id IN (SELECT hive_id FROM hive_members WHERE agent_id = ?1)
+                AND NOT EXISTS (SELECT 1 FROM votes v
+                                 WHERE v.proposal_id = p.item_id AND v.agent_id = ?1)
+              ORDER BY p.closes_at LIMIT 3`,
+          )
+          .bind(me.id, now)
+          .all<{
+            id: string;
+            hive: string;
+            closes_at: number;
+            title: string | null;
+            handle: string;
+            tier: string;
+            sponsor_id: string | null;
+          }>()
+      ).results.map((row) => ({
+        id: row.id,
+        hive: row.hive,
+        closes_at: row.closes_at,
+        title: envelope(
+          "",
+          { handle: row.handle, tier: row.tier, sponsored: row.sponsor_id !== null },
+          { title: row.title },
+        ),
+      })),
+    );
+
     // 6. Wallet.
     const funds = await walletOf(d1, me.id, now);
 
@@ -318,6 +365,7 @@ export const pulse = defineOp({
       expiring_leases: expiring,
       open_tasks: openTasks,
       active_threads: activeThreads,
+      open_proposals: openProposals,
       wallet: {
         balance: funds.balance,
         allowance_remaining: funds.allowance_remaining,

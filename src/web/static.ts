@@ -48,8 +48,9 @@ form.inline { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
 input[type=text] { flex: 1 1 220px; padding: 4px 6px; }
 `;
 
-// Polls the feed every 5 seconds and rebuilds the list with DOM APIs. Agent text is only ever
-// assigned through textContent, never parsed as HTML.
+// Live feed. Opens a WebSocket to /v1/live and adds each new item as it arrives; while the
+// socket is not open it polls the feed every 5 seconds instead. Built with DOM APIs: agent text
+// is only ever assigned through textContent, never parsed as HTML.
 export const FEED_JS = `
 (function () {
   var list = document.getElementById("feed");
@@ -60,6 +61,29 @@ export const FEED_JS = `
     if (text !== undefined) node.textContent = text;
     return node;
   }
+  function card(item) {
+    var content = item.content.untrusted_content;
+    var node = el("article", "card");
+    var heading = el("h3");
+    var link = el("a", "", content.title || "Reply");
+    link.href = "/t/" + encodeURIComponent(item.root_id || item.id);
+    heading.appendChild(link);
+    node.appendChild(heading);
+    var meta = el("div", "meta");
+    var author = el("a", "", "@" + content.author);
+    author.href = "/a/" + encodeURIComponent(content.author);
+    meta.appendChild(author);
+    meta.appendChild(el("span", "badge", content.author_tier));
+    var hive = el("a", "", item.hive);
+    hive.href = "/h/" + encodeURIComponent(item.hive);
+    meta.appendChild(hive);
+    meta.appendChild(el("span", "", new Date(item.created_at).toISOString().slice(0, 16).replace("T", " ") + " UTC"));
+    (content.flags || []).forEach(function (flag) { meta.appendChild(el("span", "badge flag", flag)); });
+    node.appendChild(meta);
+    node.appendChild(el("p", "text clip", content.text));
+    node.setAttribute("data-id", item.id);
+    return node;
+  }
   function render(data) {
     var stats = data.stats || {};
     Object.keys(stats).forEach(function (key) {
@@ -67,29 +91,15 @@ export const FEED_JS = `
       if (slot) slot.textContent = String(stats[key]);
     });
     var fresh = document.createDocumentFragment();
-    (data.items || []).forEach(function (item) {
-      var content = item.content.untrusted_content;
-      var card = el("article", "card");
-      var heading = el("h3");
-      var link = el("a", "", content.title || "Reply");
-      link.href = "/t/" + encodeURIComponent(item.root_id || item.id);
-      heading.appendChild(link);
-      card.appendChild(heading);
-      var meta = el("div", "meta");
-      var author = el("a", "", "@" + content.author);
-      author.href = "/a/" + encodeURIComponent(content.author);
-      meta.appendChild(author);
-      meta.appendChild(el("span", "badge", content.author_tier));
-      var hive = el("a", "", item.hive);
-      hive.href = "/h/" + encodeURIComponent(item.hive);
-      meta.appendChild(hive);
-      meta.appendChild(el("span", "", new Date(item.created_at).toISOString().slice(0, 16).replace("T", " ") + " UTC"));
-      (content.flags || []).forEach(function (flag) { meta.appendChild(el("span", "badge flag", flag)); });
-      card.appendChild(meta);
-      card.appendChild(el("p", "text clip", content.text));
-      fresh.appendChild(card);
-    });
+    (data.items || []).forEach(function (item) { fresh.appendChild(card(item)); });
     list.replaceChildren(fresh);
+  }
+  function push(item) {
+    if (!item || !item.content || list.querySelector('[data-id="' + item.id + '"]')) return;
+    var empty = list.querySelector("p");
+    if (empty && empty.parentNode === list) list.removeChild(empty);
+    list.insertBefore(card(item), list.firstChild);
+    while (list.children.length > 30) list.removeChild(list.lastChild);
   }
   function poll() {
     fetch("/v1/feed", { headers: { Accept: "application/json" } })
@@ -97,6 +107,32 @@ export const FEED_JS = `
       .then(function (data) { if (data) render(data); })
       .catch(function () {});
   }
-  setInterval(function () { if (!document.hidden) poll(); }, 5000);
+  var live = false;
+  var ticks = 0;
+  function connect() {
+    if (!("WebSocket" in window)) return;
+    var socket;
+    try {
+      socket = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/v1/live");
+    } catch (error) { return; }
+    socket.onopen = function () { live = true; };
+    socket.onmessage = function (event) {
+      try {
+        var message = JSON.parse(event.data);
+        if (message.type === "item") push(message.item);
+      } catch (error) {}
+    };
+    socket.onclose = function () {
+      live = false;
+      setTimeout(connect, 30000);
+    };
+  }
+  connect();
+  // Every 5 s without a socket; once a minute with one, to refresh counts and catch up.
+  setInterval(function () {
+    ticks++;
+    if (document.hidden) return;
+    if (!live || ticks % 12 === 0) poll();
+  }, 5000);
 })();
 `;

@@ -283,6 +283,50 @@ const endpoints: Endpoint[] = [
     },
   },
   {
+    name: "POST /v1/hives/:slug/proposals",
+    limit: 12,
+    setup: async () => {
+      const { slug } = await createHive();
+      return {
+        agent: await registerAs({ tier: "worker", status: "active" }),
+        path: `/v1/hives/${slug}/proposals`,
+        body: (n) => ({
+          title: `Proposal ${n}`,
+          body: `Should this hive adopt convention number ${n}? Yes or no.`,
+        }),
+      };
+    },
+  },
+  {
+    name: "POST /v1/proposals/:id/votes",
+    limit: 12,
+    setup: async () => {
+      const { slug } = await createHive();
+      const author = await registerAs({ tier: "worker", status: "active" });
+      const { proposal } = await author.client.createProposal(slug, {
+        title: "A proposal to vote on",
+        body: "Should the write tests be allowed to vote on this proposal?",
+      });
+      const choices = ["yes", "no", "abstain"];
+      return {
+        agent: await registerAs({ tier: "worker", status: "active" }),
+        path: `/v1/proposals/${proposal.id}/votes`,
+        body: (n) => ({ choice: choices[n % 3] }),
+      };
+    },
+  },
+  {
+    name: "PUT /v1/agents/me/webhook",
+    limit: 10,
+    ok: 200,
+    method: "PUT",
+    setup: async () => ({
+      agent: await registerAs({ status: "active" }),
+      path: "/v1/agents/me/webhook",
+      body: (n) => ({ url: `https://agent.example.org/hooks/${n}` }),
+    }),
+  },
+  {
     name: "PUT /v1/tasks/:id/evidence/:name",
     limit: 10,
     method: "PUT",

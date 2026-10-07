@@ -1,11 +1,10 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Hono } from "hono";
 import { type FileStore, R2FileStore } from "../adapters/files";
-import { agentWriteRule, enforceRateLimit } from "../auth/ratelimit";
 import { items, tasks } from "../db/schema";
 import { HiveError } from "../errors";
 import { parseIdempotencyKey } from "../ops/idempotency";
-import { authenticateAgent } from "../ops/run";
+import { assertWritable, authenticateAgent } from "../ops/run";
 import { splitList } from "../ops/tasks";
 import { type AppEnv, buildContext, readBody } from "./mount";
 
@@ -53,14 +52,17 @@ export function mountEvidence(app: Hono<AppEnv>): void {
       ctx.config,
       { method: c.req.method, url: c.req.url, headers: c.req.raw.headers, body },
       now,
-      c.env.METRICS,
+      { metrics: c.env.METRICS, countWrite: true },
     );
-    await enforceRateLimit(
-      ctx.db,
-      agentWriteRule(ctx.config, agent.id, agent.tier),
-      now,
-      `writes per hour at tier ${agent.tier}`,
-    );
+    await assertWritable(ctx);
+    if (ctx.config.requireSponsor && !agent.sponsorId) {
+      throw new HiveError(
+        403,
+        "sponsor_required",
+        "Only sponsored agents can write to this hive right now.",
+        "Ask the human who runs you to sponsor this agent, then try again.",
+      );
+    }
     // PUT of the same bytes to the same name is naturally idempotent; the key is still
     // required so every write looks the same to clients.
     parseIdempotencyKey(c.req.header("idempotency-key"));
@@ -77,7 +79,12 @@ export function mountEvidence(app: Hono<AppEnv>): void {
 
     const taskId = c.req.param("id");
     const [task] = await ctx.db
-      .select({ state: tasks.state, claimedBy: tasks.claimedBy, evidenceKeys: tasks.evidenceKeys })
+      .select({
+        state: tasks.state,
+        claimedBy: tasks.claimedBy,
+        evidenceKeys: tasks.evidenceKeys,
+        leaseExpiresAt: tasks.leaseExpiresAt,
+      })
       .from(tasks)
       .innerJoin(items, eq(tasks.itemId, items.id))
       .where(and(eq(tasks.itemId, taskId), eq(items.status, "visible")));
@@ -90,6 +97,14 @@ export function mountEvidence(app: Hono<AppEnv>): void {
         "Claim the task first (POST /v1/tasks/:id/claim), upload, then submit.",
       );
     }
+    if ((task.leaseExpiresAt ?? 0) <= now) {
+      throw new HiveError(
+        409,
+        "lease_expired",
+        "Your lease on this task has expired.",
+        "Claim it again if it is still open (POST /v1/tasks/:id/claim), then upload.",
+      );
+    }
     const names = splitList(task.evidenceKeys);
     if (!names.includes(name) && names.length >= MAX_FILES) {
       throw new HiveError(
@@ -100,16 +115,35 @@ export function mountEvidence(app: Hono<AppEnv>): void {
       );
     }
 
-    await store(c.env).put(evidenceKey(taskId, name), body, "application/octet-stream");
     if (!names.includes(name)) {
-      await ctx.db
-        .update(tasks)
-        .set({
-          evidenceKeys: sql`CASE WHEN ${tasks.evidenceKeys} IS NULL OR ${tasks.evidenceKeys} = ''
-            THEN ${name} ELSE ${tasks.evidenceKeys} || ',' || ${name} END`,
-        })
-        .where(eq(tasks.itemId, taskId));
+      // The name is added only while the list still has room and does not hold it, checked in
+      // the statement itself so concurrent uploads cannot pass the cap or add a name twice.
+      const added = await c.env.DB.prepare(
+        `UPDATE tasks SET evidence_keys = CASE WHEN evidence_keys IS NULL OR evidence_keys = ''
+                THEN ?2 ELSE evidence_keys || ',' || ?2 END
+          WHERE item_id = ?1 AND claimed_by = ?3
+            AND instr(',' || COALESCE(evidence_keys, '') || ',', ',' || ?2 || ',') = 0
+            AND length(COALESCE(evidence_keys, ''))
+                - length(replace(COALESCE(evidence_keys, ''), ',', ''))
+                + (COALESCE(evidence_keys, '') != '') < ?4`,
+      )
+        .bind(taskId, name, agent.id, MAX_FILES)
+        .run();
+      const listed = await c.env.DB.prepare(
+        `SELECT evidence_keys AS keys FROM tasks WHERE item_id = ?1`,
+      )
+        .bind(taskId)
+        .first<{ keys: string | null }>();
+      if (added.meta.changes === 0 && !splitList(listed?.keys ?? null).includes(name)) {
+        throw new HiveError(
+          409,
+          "too_many_files",
+          `A task can hold at most ${MAX_FILES} evidence files.`,
+          "Combine files into one archive, or upload under an existing name to replace it.",
+        );
+      }
     }
+    await store(c.env).put(evidenceKey(taskId, name), body, "application/octet-stream");
     c.header("Cache-Control", "no-store");
     return c.json({ evidence: { task_id: taskId, name, bytes: body.length } }, 201);
   });

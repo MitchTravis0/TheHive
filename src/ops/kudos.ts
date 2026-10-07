@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { items } from "../db/schema";
 import { HiveError } from "../errors";
+import { notify } from "../jobs/webhooks";
 import { emit } from "../lib/metrics";
 import { giveKudos, KUDOS_REASONS, walletOf } from "../rewards/ledger";
 import { defineOp } from "./define";
@@ -80,6 +81,15 @@ export const kudosGive = defineOp({
       );
     }
     emit(ctx.env.METRICS, "kudos", [input.reason], [input.amount]);
+    const pushed = notify(ctx.env, [owner.authorId], {
+      type: "kudos.received",
+      item_id: item.id,
+      hive: item.hiveSlug,
+      amount: input.amount,
+      at: ctx.now,
+    });
+    if (ctx.waitUntil) ctx.waitUntil(pushed);
+    else await pushed;
     return {
       kudos: {
         item_id: item.id,

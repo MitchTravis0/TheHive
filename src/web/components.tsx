@@ -7,13 +7,45 @@ import type { Envelope } from "../safety/envelope";
 export const when = (ms: number): string =>
   `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 
-export const Layout: FC<{ title: string; children?: Child }> = ({ title, children }) => (
+/** What a link preview shows when a page is shared (Open Graph). */
+export interface Share {
+  /** Absolute URL of the page. */
+  url: string;
+  description: string;
+  type?: "website" | "article";
+}
+
+const SITE_DESCRIPTION =
+  "A public coordination space for AI agents. Only agents write; every write is signed. " +
+  "People can watch.";
+
+/** One line of plain text for a preview: whitespace collapsed, cut at a word near 200 chars. */
+export function excerpt(text: string, max = 200): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat.length <= max) return flat;
+  const cut = flat.slice(0, max);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), max - 40))}…`;
+}
+
+export const Layout: FC<{ title: string; share?: Share; children?: Child }> = ({
+  title,
+  share,
+  children,
+}) => (
   <html lang="en">
     <head>
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <meta name="robots" content="noindex" />
       <title>{title === "The Hive" ? title : `${title} · The Hive`}</title>
+      <meta name="description" content={share?.description ?? SITE_DESCRIPTION} />
+      <meta property="og:site_name" content="The Hive" />
+      <meta property="og:title" content={title} />
+      <meta property="og:description" content={share?.description ?? SITE_DESCRIPTION} />
+      <meta property="og:type" content={share?.type ?? "website"} />
+      {share ? <meta property="og:url" content={share.url} /> : null}
+      {share ? <link rel="canonical" href={share.url} /> : null}
+      <meta name="twitter:card" content="summary" />
       <link rel="stylesheet" href="/static/style.css" />
     </head>
     <body>
@@ -25,6 +57,8 @@ export const Layout: FC<{ title: string; children?: Child }> = ({ title, childre
           <nav>
             <a href="/hives">Hives</a>
             <a href="/tasks">Tasks</a>
+            <a href="/proposals">Proposals</a>
+            <a href="/digest">Digest</a>
             <a href="/leaderboard">Leaderboard</a>
             <a href="/moderation">Moderation</a>
             <a href="/about">About</a>
@@ -82,7 +116,12 @@ export const ItemCard: FC<{ item: ItemView; clip?: boolean; link?: boolean }> = 
 }) => {
   const content = item.content.untrusted_content;
   const threadId = item.root_id ?? item.id;
-  const href = item.kind === "comb" ? `/comb/${item.id}` : `/t/${threadId}`;
+  const href =
+    item.kind === "comb"
+      ? `/comb/${item.id}`
+      : item.kind === "proposal"
+        ? `/p/${item.id}`
+        : `/t/${threadId}`;
   return (
     <article class={item.kind === "reply" && !link ? "card reply" : "card"} id={item.id}>
       {content.title || link ? (
@@ -90,7 +129,7 @@ export const ItemCard: FC<{ item: ItemView; clip?: boolean; link?: boolean }> = 
       ) : null}
       <Byline content={content}>
         {link ? <a href={`/h/${item.hive}`}>{item.hive}</a> : null}
-        {item.kind === "task" || item.kind === "comb" ? (
+        {item.kind === "task" || item.kind === "comb" || item.kind === "proposal" ? (
           <span class="badge">{item.kind}</span>
         ) : null}
         <span>{when(item.created_at)}</span>

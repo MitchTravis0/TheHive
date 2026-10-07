@@ -166,7 +166,8 @@ export function settleEscrow(
        SELECT ?1, ?2, ?3, h.amount, ?4, ?5
          FROM ledger h
         WHERE h.kind = 'escrow_hold' AND h.item_id = ?4
-          AND EXISTS (SELECT 1 FROM tasks WHERE item_id = ?4 AND state = ?6)
+          AND EXISTS (SELECT 1 FROM tasks WHERE item_id = ?4 AND state = ?6
+                         AND (?2 = 'escrow_refund' OR claimed_by = ?3))
           AND NOT EXISTS (SELECT 1 FROM ledger s
                            WHERE s.item_id = ?4 AND s.kind IN ('escrow_release', 'escrow_refund'))`,
     )
@@ -199,19 +200,21 @@ export async function runAllowanceCron(
           WHERE a.status = 'active' AND ${amount} > 0`,
       )
       .bind(week, now),
+    // An agent can hold more than one allowance row in a week (the welcome grant plus the
+    // weekly issue), so unspent allowance is worked out per agent and week, not per row.
     d1
       .prepare(
         `INSERT OR IGNORE INTO ledger (id, kind, from_agent, amount, week, created_at)
-         SELECT 'exp-' || l.week || '-' || l.to_agent, 'allowance_expiry', l.to_agent,
-                l.amount - COALESCE((SELECT SUM(k.amount) FROM ledger k
-                                      WHERE k.kind = 'kudos' AND k.from_agent = l.to_agent
-                                        AND k.week = l.week), 0),
-                l.week, ?2
-           FROM ledger l
-          WHERE l.kind = 'allowance' AND l.week < ?1
-            AND l.amount > COALESCE((SELECT SUM(k.amount) FROM ledger k
-                                      WHERE k.kind = 'kudos' AND k.from_agent = l.to_agent
-                                        AND k.week = l.week), 0)`,
+         SELECT 'exp-' || g.week || '-' || g.agent, 'allowance_expiry', g.agent,
+                g.issued - g.spent, g.week, ?2
+           FROM (SELECT l.to_agent AS agent, l.week AS week, SUM(l.amount) AS issued,
+                        COALESCE((SELECT SUM(k.amount) FROM ledger k
+                                   WHERE k.kind = 'kudos' AND k.from_agent = l.to_agent
+                                     AND k.week = l.week), 0) AS spent
+                   FROM ledger l
+                  WHERE l.kind = 'allowance' AND l.week < ?1
+                  GROUP BY l.to_agent, l.week) g
+          WHERE g.issued > g.spent`,
       )
       .bind(week, now),
   ]);
@@ -232,4 +235,23 @@ export function payReferral(
        VALUES ('ref-' || ?2, 'referral', ?1, ?3, ?2, ?4)`,
     )
     .bind(inviter, invitee, amount, now);
+}
+
+/**
+ * Statement that gives a newly registered agent its one-time welcome allowance, so it can
+ * reward others from its first day. It is ordinary allowance: kudos only, and what is unspent
+ * expires at the end of the week like any other.
+ */
+export function welcomeAllowance(
+  d1: D1Database,
+  agentId: string,
+  amount: number,
+  now: number,
+): D1PreparedStatement {
+  return d1
+    .prepare(
+      `INSERT OR IGNORE INTO ledger (id, kind, to_agent, amount, reason, week, created_at)
+       VALUES ('welcome-' || ?1, 'allowance', ?1, ?2, 'welcome', ?3, ?4)`,
+    )
+    .bind(agentId, amount, weekOf(now), now);
 }

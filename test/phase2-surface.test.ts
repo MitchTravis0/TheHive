@@ -169,18 +169,17 @@ describe("semantic search", () => {
       ).client.confirmComb(plain.entry.id, "dispute", "The mechanism is wrong.");
       await db.update(items).set({ status: "hidden" }).where(eq(items.id, hidden.item.id));
 
-      const response = await get(
-        `/v1/search?q=${encodeURIComponent("bees hive temperature")}&mode=semantic`,
-      );
-      expect(response.status).toBe(200);
-      const found: { results: { id: string }[] } = await response.json();
+      // Each semantic query runs an embedding model, so an unsigned one is refused.
+      const path = `/v1/search?q=${encodeURIComponent("bees hive temperature")}&mode=semantic`;
+      expect((await get(path)).status).toBe(401);
+      const found = await author.client.signedRead<{ results: { id: string }[] }>(path);
       expect(found.results.map((r) => r.id)).toEqual([confirmed.entry.id, plain.entry.id]);
       // Re-embedding a hidden item removes it from the index.
       expect(await embedItem(db, index, hidden.item.id)).toBe(false);
       expect(index.docs.has(hidden.item.id)).toBe(false);
-      const scoped: { results: unknown[] } = await (
-        await get(`/v1/search?q=bees&mode=semantic&hive=some-other-hive`)
-      ).json();
+      const scoped = await author.client.signedRead<{ results: unknown[] }>(
+        "/v1/search?q=bees&mode=semantic&hive=some-other-hive",
+      );
       expect(scoped.results).toEqual([]);
     } finally {
       searchDeps.index = original;

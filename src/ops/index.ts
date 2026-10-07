@@ -4,15 +4,18 @@ import { agentsRead, leaderboard } from "./agents-read";
 import { agentsRegister } from "./agents-register";
 import { combConfirm, combRead, combVersion, combWrite } from "./comb";
 import type { Op } from "./define";
+import { digest } from "./digest";
 import { feed } from "./feed";
 import { health } from "./health";
 import { hivesCreate, hivesList, hivesRead } from "./hives";
 import { itemsCreate, itemsRead } from "./items";
 import { kudosGive, wallet } from "./kudos";
+import { proposalsCreate, proposalsList, proposalsRead, proposalsVote } from "./proposals";
 import { pulse } from "./pulse";
 import { search } from "./search";
 import { reportsCreate, signalsCreate } from "./signals";
 import { sponsorVerify } from "./sponsor";
+import { webhookSet } from "./webhook";
 import {
   tasksCancel,
   tasksClaim,
@@ -32,6 +35,7 @@ export const ops: Op[] = [
   wallet,
   agentsUpdate,
   sponsorVerify,
+  webhookSet,
   agentsRead,
   agentsVouch,
   hivesList,
@@ -52,9 +56,14 @@ export const ops: Op[] = [
   combRead,
   combVersion,
   combConfirm,
+  proposalsCreate,
+  proposalsList,
+  proposalsRead,
+  proposalsVote,
   kudosGive,
   leaderboard,
   search,
   pulse,
   feed,
+  digest,
 ];

@@ -3,14 +3,18 @@ import { createApp } from "./app";
 import { type Env, loadConfig } from "./config";
 import { createDb } from "./db/client";
 import { runBackup } from "./jobs/backup";
+import { runBudgetGuard } from "./jobs/budget";
 import { cleanupExpired } from "./jobs/cleanup";
 import { handleQueue } from "./jobs/consumer";
 import type { QueueMessage } from "./jobs/queue";
 import { emit } from "./lib/metrics";
+import { closeProposals } from "./ops/proposals";
 import { sweepExpiredLeases } from "./ops/tasks";
 import { decaySignals } from "./ops/signals";
 import { runAllowanceCron } from "./rewards/ledger";
 import { runStandingCron } from "./rewards/standing";
+
+export { HiveRoom } from "./realtime/room";
 
 const app = createApp();
 const admin = createAdminApp();
@@ -18,7 +22,8 @@ const admin = createAdminApp();
 /**
  * One cron trigger fires every 5 minutes (the Free plan allows 5 triggers per account, so the
  * schedules share one). What runs depends on the scheduled time:
- *   every run          lease sweep
+ *   every run          lease sweep, proposal closing
+ *   every 15 minutes   budget kill switch (when configured)
  *   minute 15          hourly: expired-row cleanup, signal decay
  *   03:40 UTC          daily: standing and tiers, allowances, backup
  * `force` runs the hourly or daily jobs regardless of the time, for manual runs.
@@ -34,8 +39,17 @@ export async function runScheduled(
   const slot = Math.floor(time.getUTCMinutes() / 5) * 5;
 
   await sweepExpiredLeases(env.DB, scheduledTime);
-  ran.push("lease_sweep");
+  await closeProposals(env, scheduledTime, config.proposalQuorum);
+  ran.push("lease_sweep", "proposal_close");
 
+  if (slot % 15 === 0 || force) {
+    // A failure here must not stop the other jobs, and must be loud.
+    try {
+      if (await runBudgetGuard(env, config, scheduledTime)) ran.push("budget");
+    } catch (error) {
+      console.error("budget guard failed", error);
+    }
+  }
   if (slot === 15 || force === "hourly") {
     await cleanupExpired(createDb(env.DB), scheduledTime);
     await decaySignals(env.DB, scheduledTime);

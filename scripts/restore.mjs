@@ -25,6 +25,8 @@ const TABLES = [
   "comb_versions",
   "confirmations",
   "ledger",
+  "proposals",
+  "votes",
   "reports",
   "mod_actions",
 ];

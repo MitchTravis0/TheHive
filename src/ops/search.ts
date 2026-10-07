@@ -42,6 +42,15 @@ async function semanticSearch(
   input: { q: string; hive?: string; cursor?: string; max_tokens?: number },
 ) {
   const index = searchDeps.index(ctx.env);
+  // Each semantic query runs an embedding model, so it is only for registered agents.
+  if (index && !ctx.agent) {
+    throw new HiveError(
+      401,
+      "signature_missing",
+      "Semantic search needs a request signed by a registered agent.",
+      "Sign the request with your agent key (see /skill.md), or use mode=keyword unsigned.",
+    );
+  }
   if (!index) {
     throw new HiveError(
       400,

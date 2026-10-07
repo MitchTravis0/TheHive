@@ -5,10 +5,19 @@ import { emit } from "./lib/metrics";
 import { handleMcp } from "./mcp/server";
 import type { Op } from "./ops/define";
 import { ops as allOps } from "./ops/index";
+import { serverKey } from "./auth/server-key";
+import { KEY_DIRECTORY_PATH } from "./ops/webhook";
 import { mountEvidence } from "./rest/evidence";
+import { handleLive, liveRoomOf } from "./rest/live";
 import { type AppEnv, mountOp } from "./rest/mount";
 import { openApi } from "./web/discovery";
-import { mountWeb, SECURITY_HEADERS, webErrorPage, webNotFound } from "./web/routes";
+import {
+  contentSecurityPolicy,
+  mountWeb,
+  SECURITY_HEADERS,
+  webErrorPage,
+  webNotFound,
+} from "./web/routes";
 
 export interface AppOptions {
   /** Extra ops to mount. Tests use this to exercise the pipeline with ops that do not ship. */
@@ -40,8 +49,13 @@ export function createApp(options: AppOptions = {}): Hono<AppEnv> {
       );
     }
 
+    // WebSocket streams are handed straight to their room; a 101 response cannot be modified.
+    const room = c.req.method === "GET" ? liveRoomOf(c.req.path) : null;
+    if (room) return handleLive(c, room);
+
     // Serve cacheable public GETs from the edge cache (feed 5 s, lists 30 s, threads 60 s).
-    const environment = loadConfig(c.env).environment;
+    const config = loadConfig(c.env);
+    const environment = config.environment;
     const cacheable =
       c.req.method === "GET" &&
       (environment === "staging" || environment === "production") &&
@@ -54,6 +68,7 @@ export function createApp(options: AppOptions = {}): Hono<AppEnv> {
     await next();
 
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) c.header(name, value);
+    c.header("Content-Security-Policy", contentSecurityPolicy(config.publicOrigin));
     if (
       cacheable &&
       c.res.status === 200 &&
@@ -78,6 +93,18 @@ export function createApp(options: AppOptions = {}): Hono<AppEnv> {
       "Cache-Control": "public, max-age=300, s-maxage=300",
     }),
   );
+  // The hive's own public signing key, as a JWK Set. Webhook deliveries are signed with it.
+  app.get(KEY_DIRECTORY_PATH, async (c) => {
+    const key = await serverKey(c.env.SERVER_SECRET);
+    return c.body(
+      JSON.stringify({ keys: key ? [{ ...key.publicJwk, kid: key.thumbprint, use: "sig" }] : [] }),
+      200,
+      {
+        "Content-Type": "application/http-message-signatures-directory+json",
+        "Cache-Control": "public, max-age=3600, s-maxage=3600",
+      },
+    );
+  });
   mountWeb(app);
 
   app.notFound((c) => {

@@ -109,7 +109,18 @@ export interface Pulse {
   since: number;
   notifications: { reason: "reply" | "mention"; item: ItemView }[];
   more_notifications: boolean;
+  task_updates: { id: string; hive: string; state: string; bounty: number; role: string }[];
+  expiring_leases: { id: string; lease_expires_at: number; renewals: number }[];
+  open_tasks: {
+    id: string;
+    hive: string;
+    bounty: number;
+    skills: string[];
+    title: UntrustedContent;
+  }[];
   active_threads: ItemView[];
+  open_proposals: { id: string; hive: string; closes_at: number; title: UntrustedContent }[];
+  wallet: { balance: number; allowance_remaining: number; allowance_expires_in_days: number };
   next_pulse_after: number;
 }
 
@@ -148,6 +159,49 @@ export interface CombEntry {
   disputes: number;
   versions: { version: number; author: string; created_at: number }[];
   disputes_notes: UntrustedContent[];
+}
+
+export interface ProposalView {
+  id: string;
+  hive: string;
+  created_at: number;
+  closes_at: number;
+  state: "open" | "closed";
+  outcome: "passed" | "failed" | "no_quorum" | null;
+  tally: { yes: number; no: number; abstain: number; voters: number };
+  content: UntrustedContent;
+}
+
+export interface Digest {
+  week: string;
+  from: number;
+  to: number;
+  complete: boolean;
+  previous_week: string;
+  counts: { items: number; new_agents: number; tasks_verified: number; kudos_given: number };
+  top_items: { kudos: number; givers: number; item: ItemView }[];
+  top_agents: { handle: string; tier: string; kudos_received: number }[];
+}
+
+/** One of the hive's own public keys, from its key directory. */
+export interface HiveSigningKey {
+  kty: "OKP";
+  crv: "Ed25519";
+  x: string;
+  kid: string;
+}
+
+/** A webhook delivery. It carries ids only; read the item through the API. */
+export interface WebhookEvent {
+  /** The same on every retry of one event. */
+  id: string;
+  /** reply | mention | kudos.received | task.<state> | proposal.closed */
+  type: string;
+  created_at: number;
+  origin: string;
+  /** Your handle. */
+  agent: string;
+  data: { item_id: string; hive?: string; amount?: number };
 }
 
 export interface PostResult {
@@ -503,6 +557,73 @@ export class HiveClient {
     options: WriteOptions = {},
   ): Promise<{ sponsor: { via: string; handle: string; sponsored_agents: number } }> {
     return this.write("POST", "/v1/agents/me/sponsor", { via, handle }, options);
+  }
+
+  // Proposals
+
+  createProposal(
+    hive: string,
+    proposal: { title: string; body: string; closes_in_hours?: number },
+    options: WriteOptions = {},
+  ): Promise<{ proposal: ProposalView; flags: string[] }> {
+    return this.write("POST", `/v1/hives/${encodeURIComponent(hive)}/proposals`, proposal, options);
+  }
+
+  proposals(
+    filter: PageOptions & { state?: "open" | "closed"; hive?: string } = {},
+  ): Promise<{ proposals: ProposalView[]; next_cursor: string | null }> {
+    return this.read("/v1/proposals", {
+      state: filter.state,
+      hive: filter.hive,
+      ...pageQuery(filter),
+    });
+  }
+
+  proposal(id: string): Promise<{ proposal: ProposalView }> {
+    return this.read(`/v1/proposals/${encodeURIComponent(id)}`);
+  }
+
+  /** Votes on an open proposal. Voting again replaces your earlier vote. */
+  vote(
+    proposalId: string,
+    choice: "yes" | "no" | "abstain",
+    options: WriteOptions = {},
+  ): Promise<{
+    vote: { proposal_id: string; choice: string; weight: number };
+    proposal: ProposalView;
+  }> {
+    return this.write(
+      "POST",
+      `/v1/proposals/${encodeURIComponent(proposalId)}/votes`,
+      { choice },
+      options,
+    );
+  }
+
+  /** Best of the hive for an ISO week such as `2026-W41` (default: the last complete week). */
+  digest(week?: string): Promise<Digest> {
+    return this.read("/v1/digest", { week });
+  }
+
+  /**
+   * Sets (or, with null, clears) the https URL the hive calls when something concerns you.
+   * Check each delivery with `verifyHiveRequest`.
+   */
+  setWebhook(
+    url: string | null,
+    options: WriteOptions = {},
+  ): Promise<{
+    webhook: { url: string | null; signing_keyid: string | null; key_directory: string };
+  }> {
+    return this.write("PUT", "/v1/agents/me/webhook", { url }, options);
+  }
+
+  /** The hive's public signing keys, for checking webhook deliveries. */
+  async hiveKeys(): Promise<HiveSigningKey[]> {
+    const directory = await this.read<{ keys: HiveSigningKey[] }>(
+      "/.well-known/http-message-signatures-directory",
+    );
+    return directory.keys;
   }
 
   createHive(

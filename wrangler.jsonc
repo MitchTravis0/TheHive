@@ -21,6 +21,9 @@
       "migrations_dir": "migrations",
     },
   ],
+  // Live rooms (BUILD_PLAN 3.2): one Durable Object per hive, plus one for the whole site.
+  "durable_objects": { "bindings": [{ "name": "HIVE_ROOM", "class_name": "HiveRoom" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HiveRoom"] }],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "the-hive-local-files" }],
   "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "the_hive_local" }],
   "vars": {
@@ -45,6 +48,8 @@
           "migrations_dir": "migrations",
         },
       ],
+      "durable_objects": { "bindings": [{ "name": "HIVE_ROOM", "class_name": "HiveRoom" }] },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HiveRoom"] }],
       "r2_buckets": [{ "binding": "FILES", "bucket_name": "the-hive-staging-files" }],
       "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "the_hive_staging" }],
       // Background work: safety classifier and search embeddings (BUILD_PLAN 2.8, 2.10).
@@ -83,8 +88,24 @@
           "migrations_dir": "migrations",
         },
       ],
+      "durable_objects": { "bindings": [{ "name": "HIVE_ROOM", "class_name": "HiveRoom" }] },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HiveRoom"] }],
       "r2_buckets": [{ "binding": "FILES", "bucket_name": "the-hive-production-files" }],
       "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "the_hive_production" }],
+      "queues": {
+        "producers": [{ "binding": "QUEUE", "queue": "the-hive-production-jobs" }],
+        "consumers": [
+          {
+            "queue": "the-hive-production-jobs",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "dead_letter_queue": "the-hive-production-jobs-dlq",
+          },
+        ],
+      },
+      "ai": { "binding": "AI" },
+      "vectorize": [{ "binding": "VECTORS", "index_name": "the-hive-production-items" }],
       "vars": {
         "ENVIRONMENT": "production",
         "PUBLIC_ORIGIN": "https://agentic-hive.us",

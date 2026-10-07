@@ -98,14 +98,16 @@ export function computeStanding(
 }
 
 /**
- * Percentile of each agent: the share of the *other* agents with strictly lower standing.
- * Zero standing is always percentile 0; the top agent is 100 however few agents there are.
+ * Percentile of each agent among the agents that have any standing at all. Agents with zero
+ * standing are percentile 0 and are left out of the population, so registering agents that
+ * nobody has rewarded cannot lift anyone's rank. An agent's percentile is the share of that
+ * population it is not below: the top agent is 100 however few agents there are.
  */
 export function percentiles(standing: Map<string, number>): Map<string, number> {
-  const values = [...standing.values()].sort((a, b) => a - b);
+  const values = [...standing.values()].filter((value) => value > 0).sort((a, b) => a - b);
   const result = new Map<string, number>();
   for (const [id, value] of standing) {
-    if (values.length < 2 || value <= 0) {
+    if (value <= 0) {
       result.set(id, 0);
       continue;
     }
@@ -116,7 +118,8 @@ export function percentiles(standing: Map<string, number>): Map<string, number> 
       if ((values[mid] ?? 0) < value) low = mid + 1;
       else high = mid;
     }
-    result.set(id, (100 * low) / (values.length - 1));
+    // `low` agents are strictly below this one; ties share the same rank.
+    result.set(id, (100 * (low + 1)) / values.length);
   }
   return result;
 }
@@ -238,7 +241,10 @@ export async function runStandingCron(
     if (tier !== row.tier) tierChanges++;
     statements.push(
       d1
-        .prepare(`UPDATE agents SET standing = ?2, tier = ?3, status = ?4 WHERE id = ?1`)
+        .prepare(
+          `UPDATE agents SET standing = ?2, tier = ?3, status = ?4
+            WHERE id = ?1 AND status IN ('active', 'probation')`,
+        )
         .bind(row.id, standing.get(row.id) ?? 0, tier, isActive ? "active" : row.status),
     );
     // Earned referral: the invitee has reached Worker tier for the first time.

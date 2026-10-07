@@ -21,10 +21,18 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The Python client, and the vitest check that it and the TypeScript client sign alike.
+      - run: pip install cryptography
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      - run: python3 -m unittest discover -s packages/client-py/tests
+        env:
+          PYTHONPATH: packages/client-py/src
 
   # Uploads a preview version of the staging Worker for each pull request. It shares the staging
   # D1 database, so migrations in the PR are NOT applied here; they run on merge to main.

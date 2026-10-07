@@ -13,8 +13,16 @@ import { createDb } from "../db/client";
 import { HiveError } from "../errors";
 import type { Bytes } from "../lib/encoding";
 import type { Op, OpContext } from "../ops/define";
-import { parseIdempotencyKey, withIdempotency } from "../ops/idempotency";
-import { authenticateAgent, executeOp, type ExecuteResult, isWrite, parseInput } from "../ops/run";
+import { hasStoredResponse, parseIdempotencyKey, withIdempotency } from "../ops/idempotency";
+import {
+  assertWritable,
+  authenticateAgent,
+  executeOp,
+  type ExecuteResult,
+  hasSignature,
+  isWrite,
+  parseInput,
+} from "../ops/run";
 import { z } from "zod";
 
 export type AppEnv = { Bindings: Env };
@@ -107,14 +115,21 @@ async function executeSelfOp(
     isNonceSeen: nonceLookup(ctx.db),
   });
   ctx.keyThumbprint = verified.keyThumbprint;
-  // Proof-of-work is checked before the first database write.
-  await op.precheck?.(ctx, input);
-  await commitNonce(ctx.db, verified);
+  const idempotencyKey = parseIdempotencyKey(c.req.header("idempotency-key"));
+  const scope = `key:${verified.keyThumbprint}`;
+  // A retry of a registration that already succeeded gets the stored response back. It writes
+  // nothing, so it skips the checks (which would now say the key is taken) and the nonce.
+  if (!(await hasStoredResponse(ctx.db, scope, idempotencyKey, ctx.now))) {
+    // Proof-of-work and every read-only check run before the first database write.
+    await assertWritable(ctx);
+    await op.precheck?.(ctx, input);
+    await commitNonce(ctx.db, verified);
+  }
   return withIdempotency(
     ctx.db,
     {
-      scope: `key:${verified.keyThumbprint}`,
-      key: parseIdempotencyKey(c.req.header("idempotency-key")),
+      scope,
+      key: idempotencyKey,
       requestHash: `${op.method} ${new URL(c.req.url).pathname} ${verified.bodyDigest}`,
       ttlMs: ctx.config.idempotencyTtlMs,
       now: ctx.now,
@@ -144,17 +159,23 @@ export function mountOp(app: Hono<AppEnv>, op: Op): void {
       result = await executeSelfOp(op, ctx, c, body, rawInput());
     } else {
       let requestHash: string | undefined;
-      if (op.auth === "agent") {
+      // A public op still learns who is asking when the request is signed.
+      if (op.auth === "agent" || hasSignature(c.req.raw.headers)) {
         const { agent, verified } = await authenticateAgent(
           ctx.db,
           ctx.config,
           { method: c.req.method, url: c.req.url, headers: c.req.raw.headers, body },
           now,
-          c.env.METRICS,
+          { metrics: c.env.METRICS, countWrite: write && op.auth === "agent" },
         );
         ctx.agent = agent;
+        ctx.writeCounted = write && op.auth === "agent";
         ctx.keyThumbprint = verified.keyThumbprint;
-        requestHash = `${op.method} ${new URL(c.req.url).pathname} ${verified.bodyDigest}`;
+        {
+          // Query parameters are part of a write's input, so they are part of its identity.
+          const url = new URL(c.req.url);
+          requestHash = `${op.method} ${url.pathname}${url.search} ${verified.bodyDigest}`;
+        }
       }
       result = await executeOp(op, ctx, rawInput, {
         idempotencyKey: c.req.header("idempotency-key"),

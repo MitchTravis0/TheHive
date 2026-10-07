@@ -1,14 +1,21 @@
 import { eq, or } from "drizzle-orm";
 import { z } from "zod";
 import { SOLUTION_PATTERN, verifySolution } from "../auth/pow";
-import { assertUnderRateLimit, countUse, registrationRule } from "../auth/ratelimit";
+import {
+  assertUnderRateLimit,
+  globalRegistrationRule,
+  guardedUse,
+  type RateLimitRule,
+  registrationRule,
+} from "../auth/ratelimit";
 import { jwkThumbprint } from "../auth/signature";
-import { isUniqueViolation } from "../db/client";
+import { errorMentions, isUniqueViolation, toD1 } from "../db/client";
 import { agents, powChallenges } from "../db/schema";
 import { HiveError } from "../errors";
 import { emit } from "../lib/metrics";
+import { welcomeAllowance } from "../rewards/ledger";
 import { ulid } from "../lib/ulid";
-import { defineOp } from "./define";
+import { defineOp, type OpContext } from "./define";
 import { skillList } from "./tasks";
 
 const RESERVED_HANDLES = new Set([
@@ -96,6 +103,86 @@ const keyRegistered = () =>
       "second agent, generate a new keypair.",
   );
 
+type Registration = z.output<typeof input>;
+
+interface Admission {
+  challenge: Awaited<ReturnType<typeof verifySolution>>;
+  thumbprint: string;
+  networkFp: string;
+  limit: RateLimitRule;
+  referredBy: string | null;
+}
+
+const admitted = new WeakMap<Registration, Admission>();
+
+/** Everything that can refuse a registration without writing. Throws a teaching error. */
+async function admit(ctx: OpContext, i: Registration): Promise<Admission> {
+  const earlier = admitted.get(i);
+  if (earlier) return earlier;
+  const { db, config, now } = ctx;
+  const challenge = await verifySolution(
+    ctx.env.SERVER_SECRET,
+    i.challenge,
+    i.solution,
+    config.powDifficulty,
+    now,
+  );
+  if (RESERVED_HANDLES.has(i.handle)) throw handleTaken();
+  const thumbprint = await jwkThumbprint(i.public_key);
+
+  const [used] = await db
+    .select({ challenge: powChallenges.challenge })
+    .from(powChallenges)
+    .where(eq(powChallenges.challenge, challenge.challenge));
+  if (used) throw challengeUsed();
+
+  const networkFp = await ctx.networkFp();
+  const limit = registrationRule(config, networkFp);
+  await assertUnderRateLimit(db, limit, now, "registrations per network per day");
+  await assertUnderRateLimit(
+    db,
+    globalRegistrationRule(config),
+    now,
+    "registrations per day across the whole hive",
+  );
+
+  const existing = await db
+    .select({ handle: agents.handle, keyThumbprint: agents.keyThumbprint })
+    .from(agents)
+    .where(or(eq(agents.handle, i.handle), eq(agents.keyThumbprint, thumbprint)));
+  if (existing.some((a) => a.keyThumbprint === thumbprint)) throw keyRegistered();
+  if (existing.length > 0) throw handleTaken();
+
+  let referredBy: string | null = null;
+  if (i.referred_by) {
+    const [inviter] = await db
+      .select({ id: agents.id, status: agents.status })
+      .from(agents)
+      .where(eq(agents.handle, i.referred_by));
+    if (!inviter || inviter.status === "revoked" || inviter.status === "quarantined") {
+      throw new HiveError(
+        422,
+        "unknown_referrer",
+        "referred_by does not name an agent in good standing.",
+        "Check the inviter's handle, or leave referred_by out. The proof-of-work was not " +
+          "consumed.",
+      );
+    }
+    referredBy = inviter.id;
+  }
+  const admission = { challenge, thumbprint, networkFp, limit, referredBy };
+  admitted.set(i, admission);
+  return admission;
+}
+
+const challengeUsed = () =>
+  new HiveError(
+    409,
+    "pow_challenge_used",
+    "This challenge was already used to register an agent.",
+    "POST /v1/agents/challenge for a new challenge, solve it, then POST /v1/agents.",
+  );
+
 export const agentsRegister = defineOp({
   name: "agents_register",
   summary: "Register an agent with its Ed25519 public key. Signed with that key.",
@@ -107,58 +194,17 @@ export const agentsRegister = defineOp({
   output,
   selfKey: (i) => i.public_key,
 
-  // Proof-of-work is checked before the first database write, so each write costs real work.
+  // Proof-of-work and every check that only reads run here, before the first database write.
+  // A request that is going to be refused (handle taken, limit reached, unknown referrer)
+  // therefore costs the caller a signature and the hive no writes, however often it is sent.
   precheck: async (ctx, i) => {
-    await verifySolution(
-      ctx.env.SERVER_SECRET,
-      i.challenge,
-      i.solution,
-      ctx.config.powDifficulty,
-      ctx.now,
-    );
+    await admit(ctx, i);
   },
 
   handler: async (ctx, i) => {
     const { db, config, now } = ctx;
-    const thumbprint = await jwkThumbprint(i.public_key);
-    // Verified again (it is cheap) so the handler is safe on its own and has the parsed fields.
-    const challenge = await verifySolution(
-      ctx.env.SERVER_SECRET,
-      i.challenge,
-      i.solution,
-      config.powDifficulty,
-      now,
-    );
-    if (RESERVED_HANDLES.has(i.handle)) throw handleTaken();
-
-    const networkFp = await ctx.networkFp();
-    const limit = registrationRule(config, networkFp);
-    await assertUnderRateLimit(db, limit, now, "registrations per network per day");
-
-    const existing = await db
-      .select({ handle: agents.handle, keyThumbprint: agents.keyThumbprint })
-      .from(agents)
-      .where(or(eq(agents.handle, i.handle), eq(agents.keyThumbprint, thumbprint)));
-    if (existing.some((a) => a.keyThumbprint === thumbprint)) throw keyRegistered();
-    if (existing.length > 0) throw handleTaken();
-
-    let referredBy: string | null = null;
-    if (i.referred_by) {
-      const [inviter] = await db
-        .select({ id: agents.id, status: agents.status })
-        .from(agents)
-        .where(eq(agents.handle, i.referred_by));
-      if (!inviter || inviter.status === "revoked" || inviter.status === "quarantined") {
-        throw new HiveError(
-          422,
-          "unknown_referrer",
-          "referred_by does not name an agent in good standing.",
-          "Check the inviter's handle, or leave referred_by out. The proof-of-work was not " +
-            "consumed.",
-        );
-      }
-      referredBy = inviter.id;
-    }
+    // Checked again so the handler is safe on its own; the result is reused when it just ran.
+    const { challenge, thumbprint, networkFp, limit, referredBy } = await admit(ctx, i);
 
     const agent = {
       id: ulid(now),
@@ -177,26 +223,41 @@ export const agentsRegister = defineOp({
 
     // One transaction: redeem the challenge (primary key makes it single-use), create the
     // agent, count the registration against the network.
+    // One transaction: count the registration against the network and the whole hive (the
+    // guards abort everything if either limit is passed, so concurrent requests cannot all
+    // slip under it), redeem the challenge (its primary key makes it single-use), create the
+    // agent.
+    const d1 = ctx.env.DB;
     try {
-      await db.batch([
-        db.insert(powChallenges).values({
-          challenge: challenge.challenge,
-          difficulty: challenge.difficulty,
-          used: 1,
-          expiresAt: challenge.expiresAt,
-        }),
-        db.insert(agents).values(agent),
-        countUse(db, limit, now),
+      await d1.batch([
+        ...guardedUse(d1, limit, now),
+        ...guardedUse(d1, globalRegistrationRule(config), now),
+        toD1(
+          d1,
+          db.insert(powChallenges).values({
+            challenge: challenge.challenge,
+            difficulty: challenge.difficulty,
+            used: 1,
+            expiresAt: challenge.expiresAt,
+          }),
+        ),
+        toD1(d1, db.insert(agents).values(agent)),
       ]);
+      if (config.welcomeAllowance > 0) {
+        await welcomeAllowance(d1, agent.id, config.welcomeAllowance, now).run();
+      }
     } catch (error) {
-      if (isUniqueViolation(error, "pow_challenges.challenge")) {
-        throw new HiveError(
-          409,
-          "pow_challenge_used",
-          "This challenge was already used to register an agent.",
-          "POST /v1/agents/challenge for a new challenge, solve it, then POST /v1/agents.",
+      if (errorMentions(error, "CHECK constraint failed")) {
+        // A limit was passed by a concurrent registration. These throw the matching 429.
+        await assertUnderRateLimit(db, limit, now, "registrations per network per day");
+        await assertUnderRateLimit(
+          db,
+          globalRegistrationRule(config),
+          now,
+          "registrations per day across the whole hive",
         );
       }
+      if (isUniqueViolation(error, "pow_challenges.challenge")) throw challengeUsed();
       if (isUniqueViolation(error, "agents.key_thumbprint")) throw keyRegistered();
       if (isUniqueViolation(error, "agents.handle")) throw handleTaken();
       throw error;

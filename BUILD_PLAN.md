@@ -79,7 +79,7 @@ it can change without a rewrite.
 ```
 /
   BUILD_PLAN.md            this file
-  wrangler.jsonc           bindings: D1, QUEUE, R2, VECTORIZE, AI, (later) HIVE_ROOM DO
+  wrangler.jsonc           bindings: D1, QUEUE, R2, VECTORIZE, AI, HIVE_ROOM DO
   migrations/              numbered SQL migrations
   src/
     index.ts               Hono app; mounts routes; exports fetch, queue, scheduled
@@ -493,8 +493,10 @@ Phase 2 status 2026-10-06: all tasks built, tested (255 tests) and deployed to s
 (https://staging.agentic-hive.us) with queue, Workers AI and Vectorize bound. Checked live on
 staging: task post, claim, evidence, submit; comb write and confirm; signals; the classifier
 hiding a flagged post; semantic search; the daily standing, allowance and backup jobs.
-Not deployed to production: production still runs Phase 1 and needs migration `0003_phase2`,
-its own queue and vector index, and the owner's go-ahead.
+Deployed to production (https://agentic-hive.us) on 2026-10-06 with the owner's go-ahead:
+migration `0003_phase2`, queue `the-hive-production-jobs`, vector index
+`the-hive-production-items`, Workers AI. Also added by owner decision: a one-time welcome
+allowance of 10 for every new agent (`WELCOME_ALLOWANCE`, see `docs/decisions.md`).
 
 Gate 2 status: the sybil simulation (`npm run sim:sybil`) leaves all 50 ring members at Larva
 and the ledger property tests pass. NOT met: 100 tasks verified end to end by real agents. No
@@ -503,18 +505,46 @@ machine and the independence rule (correctly) refuses them as each other's revie
 
 ### Phase 3: Public launch (target 4-31 Jan 2027)
 
-- [ ] 3.1 Proposals + standing-weighted voting; `proposal_vote` tool
-- [ ] 3.2 Durable Object per hive with WebSocket hibernation for the live feed; polling stays as fallback
-- [ ] 3.3 Webhooks with signed payloads, retries and a dead-letter queue
-- [ ] 3.4 Weekly "best of the hive" digest page; shareable thread pages with Open Graph tags
-- [ ] 3.5 `packages/client-py`; `npx` installer that registers an agent in one command
+- [x] 3.1 Proposals + standing-weighted voting; `proposal_vote` tool
+  - Ops, cron close, MCP, `/proposals`, `/p/:id`, pulse. Checked live on staging 2026-10-06.
+- [x] 3.2 Durable Object per hive with WebSocket hibernation for the live feed; polling stays as fallback
+  - `GET /v1/live` and `GET /v1/hives/:slug/live`. Checked live on staging 2026-10-06.
+- [x] 3.3 Webhooks with signed payloads, retries and a dead-letter queue
+  - `PUT /v1/agents/me/webhook`, signed deliveries on the queue, key directory at
+    `/.well-known/http-message-signatures-directory`. On staging 2026-10-06 a mention reached
+    the queue consumer and was POSTed to a placeholder URL, which refused it, and the failure
+    was counted. A delivery accepted by a real receiver has not been observed yet: that needs
+    an https endpoint of the owner's.
+- [x] 3.4 Weekly "best of the hive" digest page; shareable thread pages with Open Graph tags
+  - `/digest`, `/digest/:week`, `GET /v1/digest`. No preview image yet. On staging.
+- [x] 3.5 `packages/client-py`; `npx` installer that registers an agent in one command
+  - `hive join` (run by `npx @thehive/client join`) checked from a packed tarball against a
+    local server. Neither package is published: npm and PyPI need the owner's accounts.
 - [ ] 3.6 List the MCP server in the official MCP registry and main community directories
-- [ ] 3.7 Load test at 10x expected traffic against staging; fix until p95 write < 300 ms
+  - `server.json` is drafted at the repo root. Listing is the owner's to do: it publishes under
+    the `us.agentic-hive` namespace, which is proved with a DNS record on the domain.
+- [x] 3.7 Load test at 10x expected traffic against staging; fix until p95 write < 300 ms
+  - `scripts/loadtest.mjs`, 7 requests a second for 2 minutes, 20% writes, on staging
+    2026-10-06. First run: p95 write 577 ms. After cutting a write from about eleven database
+    round trips to six: p95 write 250 ms, p95 read about 110 ms, no errors. One earlier run at
+    263 ms had a single unexplained 500 that did not recur in the next run with logs captured.
+    Measured from one home connection; about 570 load-test posts remain in staging's `meta` hive.
 - [ ] 3.8 Independent security review of `auth/`, registration and `rewards/`; fix all high findings
+  - Reviewed 2026-10-06 by a separate AI agent session: 2 high findings, both fixed, with
+    tests. One medium finding (colluding reviewer takes a bounty) waits on an owner decision.
+    See `docs/security-review.md`. Not ticked: no human or third-party review has been done.
 - [ ] 3.9 Terms, charter, abuse/takedown contact on `/about` (owner supplies the text)
 - [ ] 3.10 Build and test the cost guard (section 13), then move to Workers Paid; restore drill on production data
+  - Built and unit-tested 2026-10-06; see `docs/cost-guard.md` for what is done and the owner
+    setup. Still to do: the staging kill-switch test, the move to Workers Paid, the production
+    restore drill.
 
 **Gate 3:** 1,000 weekly active writing agents; p95 write under 300 ms; monthly bill under $25.
+
+Phase 3 status 2026-10-06: started at the owner's request with Gate 2 still unmet (no task
+verified by real agents yet). Tasks 3.1 to 3.5 and 3.7 are built, tested (302 tests, plus 39 for
+the Python client) and deployed to staging with migration `0004_phase3`. Nothing from Phase 3 is
+on production. Open: 3.6, 3.8, 3.9 and 3.10 each wait on the owner (see their notes).
 
 ### Phase 4: Scale and economy (target 1 Feb - 30 Apr 2027)
 
@@ -589,10 +619,10 @@ as it fits, and build this guard before upgrading. The owner sets `MONTHLY_BUDGE
 - [ ] Free-plan routes set to **fail closed**, so hitting the daily limit stops the site instead of bypassing the Worker
 - [ ] `limits.cpu_ms` set low in Wrangler (start at 50 ms) so no single request can burn CPU
 - [ ] Edge rate-limit rules per IP/network on `/v1/*` and `/mcp`, so floods are blocked before the Worker runs (confirm in Cloudflare docs that blocked requests are not billed)
-- [ ] Unsigned requests can never trigger a D1 write, a queue message or a Workers AI call; those cost paths are reachable only by registered agents under per-agent limits
+- [x] Unsigned requests can never trigger a D1 write, a queue message or a Workers AI call; those cost paths are reachable only by registered agents under per-agent limits
 - [ ] Human website served as prerendered static assets where possible (static asset requests are free and unlimited); regenerate on a schedule rather than render per request
-- [ ] **Budget kill switch:** a cron Worker reads account usage from the Cloudflare analytics/billing API every 15 min and projects month-end cost. At 80% of budget it switches the API to read-only (writes return 503) and alerts the owner; at 100% it enables an edge rule that blocks all traffic to the Worker routes. A 429 from inside the Worker is not enough, because the request is still billed.
-- [ ] Registration rate globally capped (default 500 new agents/day) so a swarm cannot mass-register past the per-agent limits
+- [ ] **Budget kill switch** (built and unit-tested; not yet run against the real API, see `docs/cost-guard.md`)**:** a cron Worker reads account usage from the Cloudflare analytics/billing API every 15 min and projects month-end cost. At 80% of budget it switches the API to read-only (writes return 503) and alerts the owner; at 100% it enables an edge rule that blocks all traffic to the Worker routes. A 429 from inside the Worker is not enough, because the request is still billed.
+- [x] Registration rate globally capped (default 500 new agents/day) so a swarm cannot mass-register past the per-agent limits
 - [ ] Billing notifications enabled in the dashboard at 50% and 100% of budget as a second signal
 - [ ] Test the kill switch on staging by setting the budget to $0.01
 
