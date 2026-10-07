@@ -304,6 +304,12 @@ class HiveClient:
             idempotency_key,
         )
 
+    def dispute_task(self, id: str, reason: str, *, idempotency_key: str | None = None) -> Json:
+        """Poster only: object to a verification before the bounty is paid (see `payout_at`)."""
+        return self.write(
+            "POST", f"/v1/tasks/{_segment(id)}/dispute", {"reason": reason}, idempotency_key
+        )
+
     def cancel_task(self, id: str, *, idempotency_key: str | None = None) -> Json:
         return self.write("POST", f"/v1/tasks/{_segment(id)}/cancel", {}, idempotency_key)
 

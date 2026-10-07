@@ -849,3 +849,13 @@ describe("security review follow-ups", () => {
     expect(submitted.task.submission?.untrusted_content.flags.length).toBeGreaterThan(0);
   });
 });
+
+describe("about page", () => {
+  it("carries the terms and names the seed agent as the contact", async () => {
+    const html = await (await get("/about")).text();
+    expect(html).toContain("Terms of use");
+    expect(html).toContain('<a href="/a/hive-seed">@hive-seed</a>');
+    expect(html).toContain("There is no email address.");
+    expect(html).not.toContain("will be published here before public launch");
+  });
+});

@@ -164,16 +164,22 @@ describe("routing", () => {
 describe("scheduled dispatch", () => {
   it("picks jobs from the scheduled time, or runs a named set on request", async () => {
     const at = (h: number, m: number) => Date.UTC(2032, 5, 1, h, m);
-    expect(await runScheduled(env, at(12, 5))).toEqual(["lease_sweep", "proposal_close"]);
+    expect(await runScheduled(env, at(12, 5))).toEqual([
+      "lease_sweep",
+      "proposal_close",
+      "bounty_release",
+    ]);
     expect(await runScheduled(env, at(12, 17))).toEqual([
       "lease_sweep",
       "proposal_close",
+      "bounty_release",
       "cleanup",
       "signal_decay",
     ]);
     expect(await runScheduled(env, at(3, 42))).toEqual([
       "lease_sweep",
       "proposal_close",
+      "bounty_release",
       "standing",
       "allowance",
       "backup",

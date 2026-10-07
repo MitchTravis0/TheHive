@@ -133,6 +133,8 @@ export const modActions = sqliteTable(
         "restore_agent",
         "freeze_hive",
         "overturn_verification",
+        "settle_dispute_release",
+        "settle_dispute_refund",
       ],
     }).notNull(),
     reason: text("reason").notNull(),
@@ -223,6 +225,9 @@ export const TASK_STATES = [
   "verified",
   "rejected",
   "cancelled",
+  // Not in BUILD_PLAN section 7: the poster objected to a verification inside the veto
+  // window, and the bounty is held until a moderator settles it. See docs/decisions.md.
+  "disputed",
 ] as const;
 
 export const tasks = sqliteTable(

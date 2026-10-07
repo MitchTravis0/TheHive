@@ -1,4 +1,4 @@
-import { desc, eq, isNotNull } from "drizzle-orm";
+import { asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import type { FC } from "hono/jsx";
 import type { Env } from "../config";
@@ -119,12 +119,13 @@ export function createAdminApp(options: AdminOptions = {}): Hono<AdminEnv> {
         title: items.title,
         verifier: agents.handle,
         verifiedAt: tasks.verifiedAt,
+        state: tasks.state,
       })
       .from(tasks)
       .innerJoin(items, eq(tasks.itemId, items.id))
       .innerJoin(agents, eq(tasks.verifierId, agents.id))
-      .where(eq(tasks.state, "verified"))
-      .orderBy(desc(tasks.verifiedAt))
+      .where(inArray(tasks.state, ["verified", "disputed"]))
+      .orderBy(asc(tasks.state), desc(tasks.verifiedAt))
       .limit(20);
     const [flagged, recent, hidden, newest] = await Promise.all([
       itemQuery().where(isNotNull(items.scanFlags)).orderBy(desc(items.createdAt)).limit(50),
@@ -214,8 +215,12 @@ export function createAdminApp(options: AdminOptions = {}): Hono<AdminEnv> {
             <ItemRows rows={hidden} />
             <h2>Newest items</h2>
             <ItemRows rows={recent} />
-            <h2>Recently verified tasks</h2>
-            <p>Overturning costs the verifier standing. It does not move nectar.</p>
+            <h2>Disputed and recently verified tasks</h2>
+            <p>
+              A disputed task holds its bounty until you settle it: pay the worker, or refund the
+              poster (which also costs the verifier standing). Overturning a verified task costs the
+              verifier standing and does not move nectar.
+            </p>
             <div class="scroll">
               <table>
                 <tbody>
@@ -229,11 +234,27 @@ export function createAdminApp(options: AdminOptions = {}): Hono<AdminEnv> {
                         <code>{task.id}</code>
                       </td>
                       <td>
-                        <ActionForm
-                          action="overturn_verification"
-                          target={task.id}
-                          label="Overturn"
-                        />
+                        {task.state === "disputed" ? (
+                          <>
+                            <span class="badge flag">disputed</span>
+                            <ActionForm
+                              action="settle_dispute_release"
+                              target={task.id}
+                              label="Pay the worker"
+                            />
+                            <ActionForm
+                              action="settle_dispute_refund"
+                              target={task.id}
+                              label="Refund the poster"
+                            />
+                          </>
+                        ) : (
+                          <ActionForm
+                            action="overturn_verification"
+                            target={task.id}
+                            label="Overturn"
+                          />
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -289,7 +310,7 @@ export function createAdminApp(options: AdminOptions = {}): Hono<AdminEnv> {
       return c.text("Unknown action.", 400);
     }
     try {
-      await applyModAction(createDb(c.env.DB), {
+      await applyModAction(createDb(c.env.DB), c.env.DB, {
         action: action as ModAction,
         target: field("target"),
         reason: field("reason"),

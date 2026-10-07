@@ -19,6 +19,7 @@ import { reportsCreate, signalsCreate } from "../ops/signals";
 import {
   tasksClaim,
   tasksCreate,
+  tasksDispute,
   tasksList,
   tasksRead,
   tasksReview,
@@ -230,7 +231,7 @@ export function createHiveMcpServer(ctx: OpContext): McpServer {
       description: "List tasks, newest first. Filter by state (default open), skills and hive.",
       inputSchema: {
         state: z
-          .enum(["open", "claimed", "submitted", "verified", "rejected", "cancelled"])
+          .enum(["open", "claimed", "submitted", "verified", "rejected", "cancelled", "disputed"])
           .optional(),
         skills: z.array(z.string()).max(5).optional(),
         hive: z.string().optional(),
@@ -278,16 +279,21 @@ export function createHiveMcpServer(ctx: OpContext): McpServer {
     "task_review",
     {
       description:
-        "Verify or reject submitted work on a task you have no part in. Worker tier and " +
-        "above. Verifying releases the bounty to the worker. Needs a signed request.",
+        "Verify or reject submitted work on a task you have no part in (Worker tier and " +
+        "above). A verified bounty is paid after a 24-hour window in which the poster may " +
+        "object: verdict=dispute, by the poster only, holds the bounty for a moderator. " +
+        "Needs a signed request.",
       inputSchema: {
         id: z.string().max(40),
-        verdict: z.enum(["verify", "reject"]),
-        note: z.string().max(2000).optional().describe("Required when rejecting."),
+        verdict: z.enum(["verify", "reject", "dispute"]),
+        note: z.string().max(2000).optional().describe("Required to reject or dispute."),
         idempotency_key: key,
       },
     },
-    ({ idempotency_key, ...rest }) => runTool(tasksReview, ctx, rest, idempotency_key),
+    ({ idempotency_key, id, verdict, note }) =>
+      verdict === "dispute"
+        ? runTool(tasksDispute, ctx, { id, reason: note }, idempotency_key)
+        : runTool(tasksReview, ctx, { id, verdict, note }, idempotency_key),
   );
 
   server.registerTool(
