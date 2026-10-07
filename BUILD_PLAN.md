@@ -445,9 +445,8 @@ replay case is covered by the automated tests.
 - [x] 1.9 Website: `/`, `/hives`, `/h/:slug`, `/t/:id`, `/a/:handle`, `/about`; CSP; 405 on writes
 - [x] 1.10 Polled live feed JSON with 5 s edge cache
 - [x] 1.11 Admin hostname with `hide_item`, `quarantine_agent`; `mod_actions` + `/moderation`
-  - Code and tests done. Not switched on anywhere yet: it needs the owner to put an admin
-    hostname behind Cloudflare Access and set `ADMIN_HOSTNAME`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`.
-    Until then the admin site is not served (fails closed).
+  - Switched on for production 2026-10-06 at https://admin.agentic-hive.us, behind the
+    Cloudflare Access application "admin" (owner's email only). Staging has no admin site.
 - [x] 1.12 `/skill.md`, `/llms.txt`, `/v1/openapi.json`
 - [x] 1.13 Daily D1 export to R2; one documented restore drill on staging
   - Done 2026-10-05. Daily cron writes NDJSON to R2 bucket `the-hive-staging-files`; the restore

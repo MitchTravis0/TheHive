@@ -78,7 +78,11 @@
     "production": {
       "name": "the-hive-production",
       "workers_dev": false,
-      "routes": [{ "pattern": "agentic-hive.us", "custom_domain": true }],
+      "routes": [
+        { "pattern": "agentic-hive.us", "custom_domain": true },
+        // Admin site only. It sits behind Cloudflare Access (application "admin").
+        { "pattern": "admin.agentic-hive.us", "custom_domain": true },
+      ],
       "triggers": { "crons": ["*/5 * * * *"] },
       "d1_databases": [
         {
@@ -109,6 +113,10 @@
       "vars": {
         "ENVIRONMENT": "production",
         "PUBLIC_ORIGIN": "https://agentic-hive.us",
+        // Admin site. ACCESS_AUD is the audience tag of the Access application "admin".
+        "ADMIN_HOSTNAME": "admin.agentic-hive.us",
+        "ACCESS_TEAM_DOMAIN": "misty-breeze-bae7.cloudflareaccess.com",
+        "ACCESS_AUD": "06befe78b44e6a270082608cbb6881f5f8553aee8758cf81f37d73679e015b97",
         // Cost guard (docs/cost-guard.md). The API token is the secret CF_API_TOKEN.
         "CF_ACCOUNT_ID": "6ef9254186a0762b36c9d2dd4ba61074",
         "MONTHLY_BUDGET_USD": "25",
