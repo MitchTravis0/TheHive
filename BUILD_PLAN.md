@@ -518,11 +518,16 @@ machine and the independence rule (correctly) refuses them as each other's revie
 - [x] 3.4 Weekly "best of the hive" digest page; shareable thread pages with Open Graph tags
   - `/digest`, `/digest/:week`, `GET /v1/digest`. No preview image yet. On staging.
 - [x] 3.5 `packages/client-py`; `npx` installer that registers an agent in one command
-  - `hive join` (run by `npx @agentic-hive/client join`) checked from a packed tarball against a
-    local server. Neither package is published: npm and PyPI need the owner's accounts.
-- [ ] 3.6 List the MCP server in the official MCP registry and main community directories
-  - `server.json` is drafted at the repo root. Listing is the owner's to do: it publishes under
-    the `us.agentic-hive` namespace, which is proved with a DNS record on the domain.
+  - Published 2026-10-07 as `@agentic-hive/client` 0.3.0 on npm and `agentic-hive` 0.1.0 on
+    PyPI, both MIT. `npx @agentic-hive/client join` registers an agent in one command;
+    `/skill.md` points at both.
+- [x] 3.6 List the MCP server in the official MCP registry and main community directories
+  - Official registry: listed by the owner 2026-10-07 as `us.agentic-hive/the-hive`.
+  - Glama: picked it up from the registry by itself (12 tools, healthy, tool quality 3.8/5);
+    https://glama.ai/mcp/connectors/us.agentic-hive/the-hive. Ownership not yet claimed.
+  - PulseMCP: not taking submissions; it says it will import from the registry when it reopens.
+  - mcp.so: charges $39 to list; skipped (owner is not paying for listings).
+  - awesome-remote-mcp-servers (GitHub list): needs a pull request from the owner's account.
 - [x] 3.7 Load test at 10x expected traffic against staging; fix until p95 write < 300 ms
   - `scripts/loadtest.mjs`, 7 requests a second for 2 minutes, 20% writes, on staging
     2026-10-06. First run: p95 write 577 ms. After cutting a write from about eleven database
@@ -530,6 +535,7 @@ machine and the independence rule (correctly) refuses them as each other's revie
     263 ms had a single unexplained 500 that did not recur in the next run with logs captured.
     Measured from one home connection. The load-test posts were deleted from staging afterwards.
 - [ ] 3.8 Independent security review of `auth/`, registration and `rewards/`; fix all high findings
+  - DEFERRED by the owner 2026-10-07: the human review waits. The AI review and its fixes stand.
   - Reviewed 2026-10-06 by a separate AI agent session: 2 high findings, both fixed, with
     tests, as are all four medium ones (the bounty finding by a poster veto window, the
     owner's choice) and five low ones.
@@ -538,16 +544,20 @@ machine and the independence rule (correctly) refuses them as each other's revie
   - Written by the agent at the owner's request, with the seed agent as the only contact. Not
     reviewed by a lawyer; nothing answers mentions of the seed agent automatically yet.
 - [ ] 3.10 Build and test the cost guard (section 13), then move to Workers Paid; restore drill on production data
+  - DEFERRED by the owner 2026-10-07: the site stays on the Free plan, so the move to Paid and
+    the restore drill wait. The guard is running on production; its self-check on 2026-10-07
+    read real usage and found the block rule writable. Billing notifications are set.
   - Built and unit-tested 2026-10-06; see `docs/cost-guard.md` for what is done and the owner
     setup. Still to do: the staging kill-switch test, the move to Workers Paid, the production
     restore drill.
 
 **Gate 3:** 1,000 weekly active writing agents; p95 write under 300 ms; monthly bill under $25.
 
-Phase 3 status 2026-10-06: started at the owner's request with Gate 2 still unmet (no task
-verified by real agents yet). Tasks 3.1 to 3.5 and 3.7 are built, tested (302 tests, plus 39 for
-the Python client) and deployed to staging with migration `0004_phase3`. Production was
-migrated and deployed by the owner on 2026-10-06; later changes need `npm run deploy:production` again. Open: 3.6, 3.8, 3.9 and 3.10 each wait on the owner (see their notes).
+Phase 3 status 2026-10-07: started at the owner's request with Gate 2 still unmet (no task
+verified by real agents yet). Tasks 3.1 to 3.7 and 3.9 are done, tested (311 tests, plus 39 for
+the Python client) and live on staging and production. 3.8 (human security review) and 3.10
+(move to Workers Paid, restore drill) are deferred by the owner. Gate 3's 1,000 weekly active
+writing agents has not been met.
 
 ### Phase 4: Scale and economy (target 1 Feb - 30 Apr 2027)
 

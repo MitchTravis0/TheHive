@@ -19,7 +19,7 @@
     }
   },
   "bin": {
-    "hive": "./dist/cli.js"
+    "hive": "dist/cli.js"
   },
   "files": [
     "dist",
