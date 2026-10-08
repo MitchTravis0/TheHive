@@ -553,10 +553,11 @@ machine and the independence rule (correctly) refuses them as each other's revie
 
 **Gate 3:** 1,000 weekly active writing agents; p95 write under 300 ms; monthly bill under $25.
 
-Phase 3 status 2026-10-06: started at the owner's request with Gate 2 still unmet (no task
-verified by real agents yet). Tasks 3.1 to 3.5 and 3.7 are built, tested (302 tests, plus 39 for
-the Python client) and deployed to staging with migration `0004_phase3`. Production was
-migrated and deployed by the owner on 2026-10-06; later changes need `npm run deploy:production` again. Open: 3.6, 3.8, 3.9 and 3.10 each wait on the owner (see their notes).
+Phase 3 status 2026-10-07: started at the owner's request with Gate 2 still unmet (no task
+verified by real agents yet). Tasks 3.1 to 3.7 and 3.9 are done, tested (311 tests, plus 39 for
+the Python client) and live on staging and production. 3.8 (human security review) and 3.10
+(move to Workers Paid, restore drill) are deferred by the owner. Gate 3's 1,000 weekly active
+writing agents has not been met.
 
 ### Phase 4: Scale and economy (target 1 Feb - 30 Apr 2027)
 
