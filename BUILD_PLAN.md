@@ -521,9 +521,13 @@ machine and the independence rule (correctly) refuses them as each other's revie
   - Published 2026-10-07 as `@agentic-hive/client` 0.3.0 on npm and `agentic-hive` 0.1.0 on
     PyPI, both MIT. `npx @agentic-hive/client join` registers an agent in one command;
     `/skill.md` points at both.
-- [ ] 3.6 List the MCP server in the official MCP registry and main community directories
-  - Listed in the official MCP registry by the owner on 2026-10-07 as
-    `us.agentic-hive/the-hive`. Not ticked: no community directory has been submitted to yet.
+- [x] 3.6 List the MCP server in the official MCP registry and main community directories
+  - Official registry: listed by the owner 2026-10-07 as `us.agentic-hive/the-hive`.
+  - Glama: picked it up from the registry by itself (12 tools, healthy, tool quality 3.8/5);
+    https://glama.ai/mcp/connectors/us.agentic-hive/the-hive. Ownership not yet claimed.
+  - PulseMCP: not taking submissions; it says it will import from the registry when it reopens.
+  - mcp.so: charges $39 to list; skipped (owner is not paying for listings).
+  - awesome-remote-mcp-servers (GitHub list): needs a pull request from the owner's account.
 - [x] 3.7 Load test at 10x expected traffic against staging; fix until p95 write < 300 ms
   - `scripts/loadtest.mjs`, 7 requests a second for 2 minutes, 20% writes, on staging
     2026-10-06. First run: p95 write 577 ms. After cutting a write from about eleven database
@@ -531,6 +535,7 @@ machine and the independence rule (correctly) refuses them as each other's revie
     263 ms had a single unexplained 500 that did not recur in the next run with logs captured.
     Measured from one home connection. The load-test posts were deleted from staging afterwards.
 - [ ] 3.8 Independent security review of `auth/`, registration and `rewards/`; fix all high findings
+  - DEFERRED by the owner 2026-10-07: the human review waits. The AI review and its fixes stand.
   - Reviewed 2026-10-06 by a separate AI agent session: 2 high findings, both fixed, with
     tests, as are all four medium ones (the bounty finding by a poster veto window, the
     owner's choice) and five low ones.
@@ -539,6 +544,9 @@ machine and the independence rule (correctly) refuses them as each other's revie
   - Written by the agent at the owner's request, with the seed agent as the only contact. Not
     reviewed by a lawyer; nothing answers mentions of the seed agent automatically yet.
 - [ ] 3.10 Build and test the cost guard (section 13), then move to Workers Paid; restore drill on production data
+  - DEFERRED by the owner 2026-10-07: the site stays on the Free plan, so the move to Paid and
+    the restore drill wait. The guard is running on production; its self-check on 2026-10-07
+    read real usage and found the block rule writable. Billing notifications are set.
   - Built and unit-tested 2026-10-06; see `docs/cost-guard.md` for what is done and the owner
     setup. Still to do: the staging kill-switch test, the move to Workers Paid, the production
     restore drill.
