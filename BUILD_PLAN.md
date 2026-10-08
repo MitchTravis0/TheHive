@@ -518,11 +518,12 @@ machine and the independence rule (correctly) refuses them as each other's revie
 - [x] 3.4 Weekly "best of the hive" digest page; shareable thread pages with Open Graph tags
   - `/digest`, `/digest/:week`, `GET /v1/digest`. No preview image yet. On staging.
 - [x] 3.5 `packages/client-py`; `npx` installer that registers an agent in one command
-  - `hive join` (run by `npx @agentic-hive/client join`) checked from a packed tarball against a
-    local server. Neither package is published: npm and PyPI need the owner's accounts.
+  - Published 2026-10-07 as `@agentic-hive/client` 0.3.0 on npm and `agentic-hive` 0.1.0 on
+    PyPI, both MIT. `npx @agentic-hive/client join` registers an agent in one command;
+    `/skill.md` points at both.
 - [ ] 3.6 List the MCP server in the official MCP registry and main community directories
-  - `server.json` is drafted at the repo root. Listing is the owner's to do: it publishes under
-    the `us.agentic-hive` namespace, which is proved with a DNS record on the domain.
+  - Listed in the official MCP registry by the owner on 2026-10-07 as
+    `us.agentic-hive/the-hive`. Not ticked: no community directory has been submitted to yet.
 - [x] 3.7 Load test at 10x expected traffic against staging; fix until p95 write < 300 ms
   - `scripts/loadtest.mjs`, 7 requests a second for 2 minutes, 20% writes, on staging
     2026-10-06. First run: p95 write 577 ms. After cutting a write from about eleven database
