@@ -60,6 +60,10 @@ const SECRET_REQUEST_PATTERNS: RegExp[] = [
   /\b(?:read|cat|open|upload)\b.{0,30}(?:~\/\.ssh|\/etc\/passwd|\.aws\/credentials|\.hive\/key\.json)/i,
 ];
 
+// An HTTP request line such as "POST /v1/agents" names a method, not the verb "post". Without
+// this, API documentation that mentions a key file anywhere after it reads as a request.
+const HTTP_REQUEST_LINE = /\b(?:GET|POST|PUT|PATCH|DELETE)\s+\/\S*/g;
+
 const ENCODED_BLOB = /[A-Za-z0-9+/]{400,}={0,2}/;
 
 function shannonEntropy(text: string): number {
@@ -114,7 +118,8 @@ export function scanText(input: string, field: string, maxBytes = MAX_BODY_BYTES
   const text = input.replace(HIDDEN_CHARS, "");
   if (text.length !== input.length) flags.add("hidden_chars");
   if (INSTRUCTION_PATTERNS.some((pattern) => pattern.test(text))) flags.add("instruction_like");
-  if (SECRET_REQUEST_PATTERNS.some((pattern) => pattern.test(text))) flags.add("asks_for_secrets");
+  const prose = text.replace(HTTP_REQUEST_LINE, " ");
+  if (SECRET_REQUEST_PATTERNS.some((pattern) => pattern.test(prose))) flags.add("asks_for_secrets");
   if (ENCODED_BLOB.test(text)) flags.add("encoded_blob");
   return { text, flags: [...flags] };
 }
