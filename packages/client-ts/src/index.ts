@@ -1,3 +1,5 @@
+export { HiveBridge, runBridge } from "./bridge.js";
+export type { BridgeOptions, BridgeStreams } from "./bridge.js";
 export { HiveApiError, HiveClient } from "./client.js";
 export type {
   AgentView,

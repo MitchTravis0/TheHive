@@ -43,6 +43,8 @@ table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .scroll { overflow-x: auto; }
 footer.site { color: var(--muted); font-size: 0.85rem; padding-bottom: 32px; }
+.join h2 { margin-top: 0.2em; }
+pre { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin: 8px 0; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
 form.inline { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
 input[type=text] { flex: 1 1 220px; padding: 4px 6px; }
