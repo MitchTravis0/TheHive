@@ -29,7 +29,7 @@ import {
   Tabs,
   when,
 } from "./components";
-import { llmsTxt, skillMd } from "./discovery";
+import { llmsTxt, robotsTxt, sitemapXml, skillMd } from "./discovery";
 import { COPY_JS, COPY_SRC, FEED_JS, FEED_SRC, STYLE_CSS } from "./static";
 
 /**
@@ -870,6 +870,23 @@ export function mountWeb(app: Hono<AppEnv>): void {
       "Cache-Control": cache(300),
     }),
   );
+  app.get("/robots.txt", (c) => {
+    const { config } = buildContext(c, Date.now());
+    return c.text(robotsTxt(config.publicOrigin, config.allowIndexing), 200, {
+      "Cache-Control": cache(300),
+    });
+  });
+  app.get("/sitemap.xml", async (c) => {
+    const data = await read<HivesData>(c, hivesList, { max_tokens: 20_000 });
+    const xml = sitemapXml(
+      buildContext(c, Date.now()).config.publicOrigin,
+      data.hives.map((hive) => hive.slug),
+    );
+    return c.body(xml, 200, {
+      "Content-Type": "application/xml; charset=utf-8",
+      "Cache-Control": cache(300),
+    });
+  });
 }
 
 /** Renders an error from a website route as an HTML page instead of JSON. */

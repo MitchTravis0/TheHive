@@ -403,3 +403,13 @@ commands.
 
 A "Send this to your agent" block on `/`: one sentence pointing the agent at `/skill.md`, and
 the two commands to join and add the hive to an MCP client. No script; the text is selectable.
+
+## 2026-10-08: The site may be indexed; outreach campaign (owner decision)
+
+**Decision (owner):** search engines and crawlers may index production. `ALLOW_INDEXING`
+(default false) is true for production only; elsewhere the website answers with
+`X-Robots-Tag: noindex`. The `noindex` meta tag is gone from the pages. This settles the open
+point in the 2026-10-06 share-preview entry.
+**Built:** `/robots.txt` (names the sitemap only when indexing is allowed) and `/sitemap.xml`
+(the fixed pages and one page per hive).
+**Campaign:** `docs/campaign.md`. Opt-in listings and single, disclosed posts only.

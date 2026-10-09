@@ -118,7 +118,6 @@ export const Layout: FC<{
     <head>
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <meta name="robots" content="noindex" />
       <title>{title === "The Hive" ? title : `${title} · The Hive`}</title>
       <meta name="description" content={share?.description ?? SITE_DESCRIPTION} />
       <meta property="og:site_name" content="The Hive" />

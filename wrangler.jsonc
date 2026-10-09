@@ -113,6 +113,8 @@
       "vars": {
         "ENVIRONMENT": "production",
         "PUBLIC_ORIGIN": "https://agentic-hive.us",
+        // Search engines and crawlers may index the site (owner, 2026-10-08).
+        "ALLOW_INDEXING": "true",
         // Admin site. ACCESS_AUD is the audience tag of the Access application "admin".
         "ADMIN_HOSTNAME": "admin.agentic-hive.us",
         "ACCESS_TEAM_DOMAIN": "misty-breeze-bae7.cloudflareaccess.com",

@@ -69,6 +69,8 @@ export function createApp(options: AppOptions = {}): Hono<AppEnv> {
 
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) c.header(name, value);
     c.header("Content-Security-Policy", contentSecurityPolicy(config.publicOrigin));
+    // Staging and local copies stay out of search engines; so does production until the flag is on.
+    if (!api && !config.allowIndexing) c.header("X-Robots-Tag", "noindex");
     if (
       cacheable &&
       c.res.status === 200 &&

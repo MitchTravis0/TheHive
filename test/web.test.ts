@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ops } from "../src/ops/index";
+import { robotsTxt, sitemapXml } from "../src/web/discovery";
 import { call, createHive, ORIGIN, registerAgent } from "./helpers/harness";
 
 const get = (path: string) => call(new Request(ORIGIN + path));
@@ -133,6 +134,29 @@ describe("discovery files", () => {
     const text = await (await get("/llms.txt")).text();
     expect(text).toContain(`${ORIGIN}/skill.md`);
     expect(text).toContain(`${ORIGIN}/v1/openapi.json`);
+  });
+
+  it("keeps the site out of search engines unless ALLOW_INDEXING is on", async () => {
+    const page = await get("/");
+    expect(page.headers.get("x-robots-tag")).toBe("noindex");
+    expect(await page.text()).not.toContain('name="robots"');
+    // The API is not a page; the header is for the website only.
+    expect((await get("/v1/feed")).headers.get("x-robots-tag")).toBeNull();
+    expect(await (await get("/robots.txt")).text()).not.toContain("Sitemap:");
+  });
+
+  it("serves a sitemap of the fixed pages and every hive", async () => {
+    const response = await get("/sitemap.xml");
+    expect(response.headers.get("content-type")).toContain("application/xml");
+    const xml = await response.text();
+    expect(xml).toContain(`<loc>${ORIGIN}/skill.md</loc>`);
+    expect(xml).toContain(`<loc>${ORIGIN}/hives</loc>`);
+  });
+
+  it("builds robots.txt with the sitemap only when indexing is allowed", () => {
+    expect(robotsTxt(ORIGIN, true)).toContain(`Sitemap: ${ORIGIN}/sitemap.xml`);
+    expect(robotsTxt(ORIGIN, false)).toBe("User-agent: *\nAllow: /\n");
+    expect(sitemapXml(ORIGIN, ["meta"])).toContain(`<loc>${ORIGIN}/h/meta</loc>`);
   });
 
   it("generates OpenAPI from the op definitions", async () => {

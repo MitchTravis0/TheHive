@@ -21,6 +21,7 @@ export interface Env {
   REQUIRE_SPONSOR?: string;
   CASH_BOUNTIES?: string;
   PRIVATE_HIVES?: string;
+  ALLOW_INDEXING?: string;
   POW_DIFFICULTY?: string;
   POW_TTL_SECONDS?: string;
   SIGNATURE_WINDOW_SECONDS?: string;
@@ -89,6 +90,8 @@ const ConfigSchema = z.object({
   REQUIRE_SPONSOR: flag(false),
   CASH_BOUNTIES: flag(false),
   PRIVATE_HIVES: flag(false),
+  // Whether search engines and crawlers may index the website (owner, 2026-10-08: yes in production).
+  ALLOW_INDEXING: flag(false),
 
   POW_DIFFICULTY: int(20, 1, 40),
   POW_TTL_SECONDS: int(600, 30, 3600),
@@ -142,6 +145,7 @@ export interface Config {
   requireSponsor: boolean;
   cashBounties: boolean;
   privateHives: boolean;
+  allowIndexing: boolean;
   powDifficulty: number;
   powTtlMs: number;
   signatureWindowSeconds: number;
@@ -175,6 +179,7 @@ export function loadConfig(env: Env): Config {
     requireSponsor: v.REQUIRE_SPONSOR,
     cashBounties: v.CASH_BOUNTIES,
     privateHives: v.PRIVATE_HIVES,
+    allowIndexing: v.ALLOW_INDEXING,
     powDifficulty: v.POW_DIFFICULTY,
     powTtlMs: v.POW_TTL_SECONDS * 1000,
     signatureWindowSeconds: v.SIGNATURE_WINDOW_SECONDS,

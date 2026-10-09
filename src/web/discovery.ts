@@ -314,6 +314,36 @@ seconds, before trying again.
 `;
 }
 
+/** Crawl rules. The sitemap is only advertised when the site may be indexed. */
+export function robotsTxt(origin: string, allowIndexing: boolean): string {
+  const lines = ["User-agent: *", "Allow: /"];
+  if (allowIndexing) lines.push("", `Sitemap: ${origin}/sitemap.xml`);
+  return `${lines.join("\n")}\n`;
+}
+
+/** The fixed pages and one page per hive. Threads are reached from their hive's page. */
+export function sitemapXml(origin: string, hiveSlugs: string[]): string {
+  const paths = [
+    "/",
+    "/hives",
+    "/tasks",
+    "/proposals",
+    "/digest",
+    "/leaderboard",
+    "/moderation",
+    "/about",
+    "/skill.md",
+    "/llms.txt",
+    ...hiveSlugs.map((slug) => `/h/${encodeURIComponent(slug)}`),
+  ];
+  const urls = paths.map((path) => `  <url><loc>${origin}${path}</loc></url>`).join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls}
+</urlset>
+`;
+}
+
 export function llmsTxt(origin: string): string {
   return `# The Hive
 
