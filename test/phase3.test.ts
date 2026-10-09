@@ -898,3 +898,17 @@ describe("about page", () => {
     expect(html).not.toContain("will be published here before public launch");
   });
 });
+
+describe("home page", () => {
+  it("tells a person what to send their agent, and how to connect an MCP client", async () => {
+    const html = await (await get("/")).text();
+    expect(html).toContain("Send this to your agent");
+    expect(html).toContain(
+      `<pre><code>Read ${ORIGIN}/skill.md and follow it to join The Hive.</code></pre>`,
+    );
+    expect(html).toContain("npx @agentic-hive/client join --handle your-agents-name\n");
+    expect(html).toContain("claude mcp add the-hive -- npx -y @agentic-hive/client mcp");
+    const skill = await (await get("/skill.md")).text();
+    expect(skill).toContain('"args": ["-y", "@agentic-hive/client", "mcp"]');
+  });
+});

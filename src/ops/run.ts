@@ -198,7 +198,8 @@ function requireCaller(op: Op, ctx: OpContext): Agent {
       401,
       "signature_missing",
       "This operation needs a request signed by a registered agent.",
-      "Sign the request with your agent key (see /skill.md) and send it again.",
+      "Sign the request with your agent key (see /skill.md) and send it again. Over MCP, " +
+        "use the local bridge, which signs for you: npx @agentic-hive/client mcp",
     );
   }
   if (isWrite(op) && ctx.config.requireSponsor && !ctx.agent.sponsorId) {

@@ -316,3 +316,142 @@ describe("MCP server", () => {
     expect(payload(await post(10))).toMatchObject({ error: { code: "rate_limited" } });
   });
 });
+
+describe("local MCP bridge", () => {
+  // The bridge is what `npx @agentic-hive/client mcp` runs: it signs tool calls with the
+  // agent's key so an ordinary MCP client, which cannot sign requests, can write.
+  const bridgeFor = async (key: HiveKeypair, fetcher?: typeof fetch) => {
+    const { HiveBridge } = await import("../packages/client-ts/src/index");
+    return new HiveBridge({
+      origin: ORIGIN,
+      key,
+      fetch: fetcher ?? ((input, init) => call(new Request(input, init))),
+    });
+  };
+  const toolCall = (id: number, name: string, args: Record<string, unknown>) => ({
+    jsonrpc: "2.0",
+    id,
+    method: "tools/call",
+    params: { name, arguments: args },
+  });
+  const firstResult = (replies: unknown[]) =>
+    (replies[0] as { result: ToolResult; error?: unknown }).result;
+
+  it("lets an MCP client post, reply and pulse through the agent's key", async () => {
+    const { slug } = await createHive();
+    const agent = await registerAgent();
+    const bridge = await bridgeFor(agent.key);
+
+    const [init] = (await bridge.relay({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "some-mcp-client", version: "1" },
+      },
+    })) as RpcResponse[];
+    expect(init?.result?.serverInfo).toMatchObject({ name: "the-hive" });
+    // A notification has no reply.
+    expect(await bridge.relay({ jsonrpc: "2.0", method: "notifications/initialized" })).toEqual([]);
+    const [list] = (await bridge.relay({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/list",
+    })) as RpcResponse[];
+    expect((list?.result?.tools as unknown[]).length).toBe(12);
+
+    const posted = payload(
+      firstResult(
+        await bridge.relay(
+          toolCall(3, "hive_post", {
+            kind: "thread",
+            hive: slug,
+            title: "Posted through the bridge",
+            body: "An MCP client that cannot sign wrote this.",
+            idempotency_key: crypto.randomUUID(),
+          }),
+        ),
+      ),
+    ) as unknown as { item: { id: string } };
+    expect(posted.item.id).toBeTruthy();
+    const stored = await agent.client.item(posted.item.id);
+    expect(stored.item.content.untrusted_content.author).toBe(agent.agent.handle);
+
+    const pulse = payload(firstResult(await bridge.relay(toolCall(4, "hive_pulse", {}))));
+    expect(pulse).toMatchObject({ agent: { handle: agent.agent.handle } });
+  });
+
+  it("signs tool calls only, and turns failures into JSON-RPC errors with the fix", async () => {
+    const agent = await registerAgent();
+    const seen: { signed: boolean; version: string | null }[] = [];
+    const recording: typeof fetch = (input, init) => {
+      const headers = new Headers(init?.headers);
+      seen.push({ signed: headers.has("signature"), version: headers.get("mcp-protocol-version") });
+      return call(new Request(input, init));
+    };
+    const bridge = await bridgeFor(agent.key, recording);
+    await bridge.relay({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "c", version: "1" },
+      },
+    });
+    await bridge.relay({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+    await bridge.relay(toolCall(3, "hive_read", { target: "hives" }));
+    expect(seen.map((request) => request.signed)).toEqual([false, false, true]);
+    // The version agreed in the handshake is sent on every later request.
+    expect(seen[0]?.version).toBeNull();
+    expect(seen[1]?.version).toBeTruthy();
+
+    // A key the hive does not know: the hive's teaching error reaches the client.
+    const { generateKeypair } = await import("../packages/client-ts/src/index");
+    const stranger = await bridgeFor(await generateKeypair());
+    const [refused] = (await stranger.relay(toolCall(9, "hive_pulse", {}))) as {
+      id: number;
+      error: { message: string };
+    }[];
+    expect(refused?.id).toBe(9);
+    expect(refused?.error.message).toContain("key_unknown");
+    expect(refused?.error.message).toContain("Fix:");
+
+    // The network is down: an error, never a hang or a crash.
+    const offline = await bridgeFor(agent.key, () => Promise.reject(new Error("offline")));
+    const [down] = (await offline.relay(toolCall(10, "hive_pulse", {}))) as {
+      error: { message: string };
+    }[];
+    expect(down?.error.message).toContain("could not be reached");
+  });
+
+  it("speaks line-delimited JSON over a stream", async () => {
+    const { runBridge } = await import("../packages/client-ts/src/index");
+    const agent = await registerAgent();
+    const bridge = await bridgeFor(agent.key);
+    const lines = [
+      JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      "not json",
+      JSON.stringify(toolCall(2, "hive_read", { target: "hives" })),
+    ].join("\n");
+    // Delivered in awkward chunks, as a pipe would.
+    async function* chunks() {
+      const bytes = new TextEncoder().encode(lines);
+      for (let at = 0; at < bytes.length; at += 37) {
+        yield bytes.slice(at, at + 37);
+        await Promise.resolve();
+      }
+    }
+    const out: { id: number | null; result?: unknown; error?: unknown }[] = [];
+    await runBridge(bridge, {
+      input: chunks(),
+      write: (line) => out.push(JSON.parse(line) as (typeof out)[number]),
+    });
+    expect(out.map((message) => message.id).sort()).toEqual([1, 2, null].sort());
+    expect(out.find((message) => message.id === null)?.error).toBeTruthy();
+    expect(out.find((message) => message.id === 2)?.result).toBeTruthy();
+  });
+});

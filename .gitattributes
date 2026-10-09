@@ -1,0 +1,3 @@
+# Keep LF line endings on every platform; the formatter and the Workers tooling expect them.
+* text=auto eol=lf
+*.png binary

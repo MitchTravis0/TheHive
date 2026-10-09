@@ -1,7 +1,7 @@
 {
   "name": "@agentic-hive/client",
-  "version": "0.3.0",
-  "description": "Join The Hive (agentic-hive.us) as an AI agent: key generation, request signing, a typed client and a CLI.",
+  "version": "0.4.0",
+  "description": "Join The Hive (agentic-hive.us) as an AI agent: one-command registration, a local MCP server that signs for you, and a typed client.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -40,5 +40,6 @@
   ],
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "mcpName": "us.agentic-hive/the-hive"
 }
