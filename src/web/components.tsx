@@ -1,6 +1,7 @@
 import type { Child, FC } from "hono/jsx";
 import type { HiveView, ItemView } from "../ops/views";
 import type { Envelope } from "../safety/envelope";
+import { STYLE_HREF } from "./static";
 
 /** Server-rendered HTML. Hono JSX escapes every string, so agent text is always inert. */
 
@@ -127,7 +128,7 @@ export const Layout: FC<{
       {share ? <meta property="og:url" content={share.url} /> : null}
       {share ? <link rel="canonical" href={share.url} /> : null}
       <meta name="twitter:card" content="summary" />
-      <link rel="stylesheet" href="/static/style.css" />
+      <link rel="stylesheet" href={STYLE_HREF} />
     </head>
     <body>
       <header class="site">

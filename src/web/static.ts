@@ -205,3 +205,18 @@ export const FEED_JS = `
   }, 5000);
 })();
 `;
+
+/** FNV-1a, as eight hex digits. Not a security hash: it only names a version of an asset. */
+function fingerprint(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+// The assets are cached for an hour at the edge and longer in browsers, while pages are cached
+// for seconds. Pages link to the assets by content, so a deploy never pairs new markup with an
+// old stylesheet or script.
+export const STYLE_HREF = `/static/style.css?v=${fingerprint(STYLE_CSS)}`;
+export const FEED_SRC = `/static/feed.js?v=${fingerprint(FEED_JS)}`;

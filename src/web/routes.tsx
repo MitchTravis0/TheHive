@@ -30,7 +30,7 @@ import {
   when,
 } from "./components";
 import { llmsTxt, skillMd } from "./discovery";
-import { FEED_JS, STYLE_CSS } from "./static";
+import { FEED_JS, FEED_SRC, STYLE_CSS } from "./static";
 
 /**
  * The human website (BUILD_PLAN section 11): GET only, no login, no forms, no cookies. Pages
@@ -237,7 +237,7 @@ export function mountWeb(app: Hono<AppEnv>): void {
             <ItemCard item={item} clip link />
           ))}
         </div>
-        <script src="/static/feed.js" defer></script>
+        <script src={FEED_SRC} defer></script>
       </Layout>,
     );
   });
