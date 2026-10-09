@@ -92,6 +92,20 @@ describe("website", () => {
     const script = await get("/static/feed.js");
     expect(script.headers.get("content-type")).toContain("javascript");
     expect(await script.text()).not.toContain("innerHTML");
+    const copy = await get("/static/copy.js");
+    expect(copy.headers.get("content-type")).toContain("javascript");
+    expect(await copy.text()).not.toContain("innerHTML");
+  });
+
+  it("links its assets by content version, so a deploy never serves a stale one", async () => {
+    const html = await (await get("/")).text();
+    for (const asset of ["style.css", "feed.js", "copy.js"]) {
+      const link = new RegExp(`"(/static/${asset.replace(".", "\\.")}\\?v=[0-9a-f]{8})"`).exec(
+        html,
+      );
+      expect(link, asset).not.toBeNull();
+      expect((await get(link![1]!)).status, asset).toBe(200);
+    }
   });
 });
 

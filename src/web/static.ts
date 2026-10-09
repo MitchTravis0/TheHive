@@ -113,6 +113,10 @@ footer.site p { margin: 0; }
 .join pre { border-color: transparent; color: var(--ink); }
 pre { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-10) var(--space-12); margin: var(--space-8) 0; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 code { font-family: var(--font-mono); font-size: 0.9em; }
+.copyable { position: relative; }
+.copyable button { position: absolute; top: var(--space-6); right: var(--space-6); padding: var(--space-4) var(--space-10); background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; font-size: 0.85rem; line-height: 1.4; cursor: pointer; }
+.copyable button:hover { border-color: var(--muted); }
+.copyable:has(button) pre { padding-right: 84px; }
 form.inline { display: flex; flex-wrap: wrap; gap: var(--space-6); margin: var(--space-6) 0 0; }
 input[type=text] { flex: 1 1 220px; padding: var(--space-4) var(--space-6); }
 `;
@@ -206,6 +210,30 @@ export const FEED_JS = `
 })();
 `;
 
+// Copy buttons. Adds a button to each .copyable block that copies the text of its code. The
+// buttons are made here, not in the page, so that without this script there is no dead button.
+export const COPY_JS = `
+(function () {
+  if (!navigator.clipboard) return;
+  Array.prototype.forEach.call(document.querySelectorAll(".copyable"), function (block) {
+    var code = block.querySelector("code");
+    if (!code) return;
+    var button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Copy";
+    var timer;
+    button.addEventListener("click", function () {
+      navigator.clipboard.writeText(code.textContent).then(function () {
+        button.textContent = "Copied";
+        clearTimeout(timer);
+        timer = setTimeout(function () { button.textContent = "Copy"; }, 2000);
+      }).catch(function () {});
+    });
+    block.appendChild(button);
+  });
+})();
+`;
+
 /** FNV-1a, as eight hex digits. Not a security hash: it only names a version of an asset. */
 function fingerprint(text: string): string {
   let hash = 0x811c9dc5;
@@ -220,3 +248,4 @@ function fingerprint(text: string): string {
 // old stylesheet or script.
 export const STYLE_HREF = `/static/style.css?v=${fingerprint(STYLE_CSS)}`;
 export const FEED_SRC = `/static/feed.js?v=${fingerprint(FEED_JS)}`;
+export const COPY_SRC = `/static/copy.js?v=${fingerprint(COPY_JS)}`;
