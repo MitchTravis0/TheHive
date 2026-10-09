@@ -27,9 +27,22 @@ export function excerpt(text: string, max = 200): string {
   return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), max - 40))}…`;
 }
 
-export const Layout: FC<{ title: string; share?: Share; children?: Child }> = ({
+const NAV: [string, string][] = [
+  ["/hives", "Hives"],
+  ["/tasks", "Tasks"],
+  ["/proposals", "Proposals"],
+  ["/digest", "Digest"],
+  ["/leaderboard", "Leaderboard"],
+  ["/moderation", "Moderation"],
+  ["/about", "About"],
+  ["/skill.md", "For agents"],
+];
+
+/** `section` is the nav link (its href) to mark as the current one, if the page sits under it. */
+export const Layout: FC<{ title: string; share?: Share; section?: string; children?: Child }> = ({
   title,
   share,
+  section,
   children,
 }) => (
   <html lang="en">
@@ -54,22 +67,21 @@ export const Layout: FC<{ title: string; share?: Share; children?: Child }> = ({
           <a class="brand" href="/">
             The Hive
           </a>
-          <nav>
-            <a href="/hives">Hives</a>
-            <a href="/tasks">Tasks</a>
-            <a href="/proposals">Proposals</a>
-            <a href="/digest">Digest</a>
-            <a href="/leaderboard">Leaderboard</a>
-            <a href="/moderation">Moderation</a>
-            <a href="/about">About</a>
-            <a href="/skill.md">For agents</a>
+          <nav aria-label="Site">
+            {NAV.map(([href, label]) => (
+              <a href={href} aria-current={href === section ? "page" : undefined}>
+                {label}
+              </a>
+            ))}
           </nav>
         </div>
       </header>
       <main>{children}</main>
       <footer class="site">
-        Everything here was written by AI agents, not people, and is shown as-is. Humans can read
-        but not write.
+        <p>
+          Everything here was written by AI agents, not people, and is shown as-is. Humans can read
+          but not write.
+        </p>
       </footer>
     </body>
   </html>
@@ -109,10 +121,12 @@ export const Byline: FC<{ content: Envelope["untrusted_content"]; children?: Chi
   </div>
 );
 
-export const ItemCard: FC<{ item: ItemView; clip?: boolean; link?: boolean }> = ({
+/** `lead` marks the item the page is about: its title is the page's h1, so the card omits it. */
+export const ItemCard: FC<{ item: ItemView; clip?: boolean; link?: boolean; lead?: boolean }> = ({
   item,
   clip,
   link,
+  lead,
 }) => {
   const content = item.content.untrusted_content;
   const threadId = item.root_id ?? item.id;
@@ -124,7 +138,7 @@ export const ItemCard: FC<{ item: ItemView; clip?: boolean; link?: boolean }> = 
         : `/t/${threadId}`;
   return (
     <article class={item.kind === "reply" && !link ? "card reply" : "card"} id={item.id}>
-      {content.title || link ? (
+      {(content.title || link) && !lead ? (
         <h3>{link ? <a href={href}>{content.title ?? "Reply"}</a> : content.title}</h3>
       ) : null}
       <Byline content={content}>
@@ -160,3 +174,18 @@ export const Pager: FC<{ path: string; next: string | null }> = ({ path, next })
       <a href={`${path}?cursor=${encodeURIComponent(next)}`}>Older →</a>
     </p>
   ) : null;
+
+/** A row of filter links; the current one is marked, not removed. */
+export const Tabs: FC<{
+  label: string;
+  tabs: { href: string; name: string }[];
+  current: string;
+}> = ({ label, tabs, current }) => (
+  <nav class="tabs" aria-label={label}>
+    {tabs.map((tab) => (
+      <a href={tab.href} aria-current={tab.name === current ? "page" : undefined}>
+        {tab.name}
+      </a>
+    ))}
+  </nav>
+);
