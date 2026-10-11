@@ -1,0 +1,19 @@
+Here's the picture. Overall this is a unusually well-hardened little platform — the CSP alone (default-src 'none'; script-src 'self'; base-uri 'none'; form-action 'none') is better than most sites with dedicated security teams. But a few things stand out:
+Real weaknesses
+1. Plain HTTP is served, and there's no HSTS — the biggest one, and trivially fixable.
+- curl -I http://agentic-hive.us returns 200 OK with content, not a 301 to HTTPS. Cloudflare's "Always Use HTTPS" appears to be off.
+- No Strict-Transport-Security header on HTTPS responses either.
+- For a platform whose entire trust model is "writes are signed, identities are keys," a MITM on a first-visit agent that strips the signing headers or serves a doctored /skill.md over HTTP is a meaningful attack. Turn on the redirect and add Strict-Transport-Security: max-age=31536000; includeSubDomains; preload.
+2. The npm supply chain is the softest target in the whole design. /skill.md tells agents to run npx -y @agentic-hive/client join — arbitrary agents execute whatever is currently published under that package name, before any key exists. One compromised npm account turns your onboarding funnel into malware distribution to exactly your audience. Worth pinning versions in the docs, publishing sigstore provenance, and having clients verify a pinned pubkey in the package's own signature checks where possible.
+3. DNSSEC is not enabled. No DNSKEY/RRSIG on the zone. A registrar/DNS hijack could swap the JWK Set at /.well-known/http-message-signatures-directory and silently re-key the hive. Cloudflare does this with one click; given the threat model, I'd enable it.
+4. Email hardening gaps. No MX (good), but also no SPF — recommend v=spf1 -all plus a null MX, and since you send no mail, bump DMARC from p=quarantine to p=reject. Also, rua=mailto:dmarc_rua@onsecureserver.net points at a GoDaddy-hosted report sink while your DNS is Cloudflare — if that's intentional, fine, but it's the kind of thing an auditor would ask about.
+Things I'd verify (couldn't test passively)
+- Webhook SSRF: PUT /v1/agents/me/webhook accepts an arbitrary URL that your server then POSTs to. Confirm it enforces https-only, resolves to public IPs only, and doesn't follow redirects into internal ranges.
+- Evidence upload: PUT /v1/tasks/:id/evidence/:name — worth confirming :name can't traverse paths, and that downloads are served with Content-Disposition: attachment (nosniff alone isn't quite enough).
+- PoW economics: difficulty 20 is ~1M SHA-256 hashes — sub-second on a laptop. Sybil resistance rests almost entirely on the 10-writes/hour larva tier. Probably fine, just be aware.
+- Rate limits on /v1/agents/challenge: it's unauthenticated; I sent one request and stopped — whether challenges themselves are throttled matters for registration abuse.
+Minor / informational
+- admin.agentic-hive.us exists and is protected by Cloudflare Access (good), but its name is permanently public via certificate transparency logs — the SAN is in the live cert. Just something to be aware of; CT records can't be deleted.
+- No security.txt — cheap to add and sets a channel for exactly the kind of report you're asking me for now.
+- Missing but nice-to-have headers: Cross-Origin-Opener-Policy, Cross-Origin-Resource-Policy, Permissions-Policy.
+The signature design itself (RFC 9421, content-digest, nonces, idempotency keys) and the untrusted_content framing for agent-written text are genuinely well done — those two are where most platforms in this space get it wrong.
