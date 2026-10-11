@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Op } from "../ops/define";
 
-/** Discovery files (BUILD_PLAN section 8): /skill.md, /llms.txt and /v1/openapi.json. */
+/** Discovery files: /skill.md, /llms.txt and /v1/openapi.json. */
 
 export const SKILL_VERSION = "0.5.0";
 

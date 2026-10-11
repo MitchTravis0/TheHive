@@ -138,7 +138,7 @@ export function agentRequestRule(config: Config, agentId: string, tier: Tier): R
   };
 }
 
-/** All registrations, from every network (BUILD_PLAN section 13, cost guard). */
+/** All registrations, from every network. */
 export function globalRegistrationRule(config: Config): RateLimitRule {
   return { bucket: "register:global", limit: config.registrationsPerDay, windowMs: DAY_MS };
 }

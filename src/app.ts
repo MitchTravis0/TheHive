@@ -35,7 +35,7 @@ export function createApp(options: AppOptions = {}): Hono<AppEnv> {
     const started = Date.now();
     const api = isApiPath(c.req.path);
 
-    // The human website is GET-only (BUILD_PLAN rule 6). There is no human write path.
+    // The human website is GET-only. There is no human write path.
     if (!api && c.req.method !== "GET" && c.req.method !== "HEAD") {
       return c.json(
         new HiveError(

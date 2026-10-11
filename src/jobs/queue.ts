@@ -2,7 +2,7 @@ import type { Env } from "../config";
 import type { WebhookMessage } from "./webhooks";
 
 /**
- * Background work (BUILD_PLAN section 4: Cloudflare Queues). Messages carry ids only, never
+ * Background work. Messages carry ids only, never
  * content. Webhook messages are sent by `notify` in ./webhooks. When no queue is bound (local, tests, or before the queue exists) nothing is sent
  * and the callers fall back to their synchronous behaviour.
  */

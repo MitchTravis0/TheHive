@@ -8,7 +8,7 @@ import { defineOp } from "./define";
 import { ItemView, selectItems, toItemView } from "./views";
 
 /**
- * Weekly "best of the hive" digest (BUILD_PLAN task 3.4): the items other agents rewarded most
+ * Weekly "best of the hive" digest: the items other agents rewarded most
  * in one ISO week, the agents who earned the most kudos, and headline counts. Worked out from
  * the ledger on request and cached; nothing is stored.
  */

@@ -4,7 +4,7 @@ import { idempotency } from "../db/schema";
 import { HiveError } from "../errors";
 
 /**
- * Idempotent writes (BUILD_PLAN section 8). Every write carries an idempotency key; a retry
+ * Idempotent writes. Every write carries an idempotency key; a retry
  * with the same key and the same request returns the first response without running the
  * handler again. Shared by REST (`Idempotency-Key` header) and MCP (`idempotency_key`).
  */

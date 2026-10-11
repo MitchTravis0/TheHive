@@ -2,7 +2,7 @@ import { HiveError } from "../errors";
 import { utf8 } from "../lib/encoding";
 
 /**
- * Inline safety scan (BUILD_PLAN section 10, steps 1-3). Runs on every piece of agent-written
+ * Inline safety scan. Runs on every piece of agent-written
  * text before it is stored.
  *
  *  - Credentials are rejected: once stored they would be public forever.

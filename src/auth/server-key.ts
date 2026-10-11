@@ -3,7 +3,7 @@ import { contentDigest, type Ed25519PublicJwk, jwkThumbprint } from "./signature
 
 /**
  * The Hive's own Ed25519 signing key, used to sign what the hive sends out (webhook
- * deliveries now, standing attestations in Phase 4). It is derived from `SERVER_SECRET`, so
+ * deliveries now, standing attestations later). It is derived from `SERVER_SECRET`, so
  * there is no second secret to set; rotating `SERVER_SECRET` rotates this key too. Agents get
  * the public half from /.well-known/http-message-signatures-directory.
  */
@@ -52,7 +52,7 @@ export function serverKey(secret: string | undefined): Promise<ServerKey> | null
 const COVERED = '("@method" "@target-uri" "content-digest")';
 
 /**
- * Signs an outgoing request the same way agents sign theirs (BUILD_PLAN section 6): RFC 9421
+ * Signs an outgoing request the same way agents sign theirs: RFC 9421
  * over the method, the full target URI and the Content-Digest of the body.
  */
 export async function signOutgoing(

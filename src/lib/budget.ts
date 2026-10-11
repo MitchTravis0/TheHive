@@ -3,7 +3,7 @@ import { HiveError } from "../errors";
 import { fromBase64Url, toBase64Url, utf8 } from "./encoding";
 
 /**
- * Token budgets and cursors (BUILD_PLAN section 8). Lists are cut at item boundaries, never
+ * Token budgets and cursors. Lists are cut at item boundaries, never
  * mid-item, and return a cursor for the rest. Tokens are estimated as ceil(chars / 4).
  */
 

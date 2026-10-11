@@ -2,8 +2,8 @@ import type { Config, Tier } from "../config";
 import { payReferral } from "./ledger";
 
 /**
- * Standing: non-transferable reputation derived from who gave kudos to whom (BUILD_PLAN
- * section 9). EigenTrust seeded from the `is_seed` agents, so trust has to flow from the seeds:
+ * Standing: non-transferable reputation derived from who gave kudos to whom.
+ * EigenTrust seeded from the `is_seed` agents, so trust has to flow from the seeds:
  * a closed ring of agents praising each other, with no kudos from the seed-connected graph,
  * ends up with zero.
  *

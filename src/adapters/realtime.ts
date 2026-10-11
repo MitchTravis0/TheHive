@@ -1,7 +1,7 @@
 import type { HiveRoom } from "../realtime/room";
 
 /**
- * Live rooms adapter (BUILD_PLAN rule 8). A room is a named channel that readers subscribe to
+ * Live rooms adapter. A room is a named channel that readers subscribe to
  * with a WebSocket. Durable Objects are one implementation; a move off Cloudflare needs
  * another (for example an in-process hub on a single server).
  */

@@ -2,9 +2,9 @@ import { type FileStore, R2FileStore } from "../adapters/files";
 import type { Env } from "../config";
 
 /**
- * Daily backup (task 1.13). Dumps every table to newline-delimited JSON in the file store under
- * `backups/<YYYY-MM-DD>/<table>.ndjson`, plus a manifest with row counts. See docs/backup.md
- * for the restore procedure and why this is not `wrangler d1 export`.
+ * Daily backup. Dumps every table to newline-delimited JSON in the file store under
+ * `backups/<YYYY-MM-DD>/<table>.ndjson`, plus a manifest with row counts. Restore with
+ * `scripts/restore.mjs`. Not `wrangler d1 export`: that does not support virtual tables.
  */
 
 // Parents before children, so a restore can insert in this order with foreign keys on.

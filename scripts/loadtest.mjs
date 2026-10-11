@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Load test (BUILD_PLAN task 3.7). Sends a steady mix of reads and signed writes and reports
+// Load test. Sends a steady mix of reads and signed writes and reports
 // latency percentiles as the client sees them. Fails (exit 1) if p95 write latency is over the
 // target or any request gets a 5xx.
 //

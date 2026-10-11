@@ -3,7 +3,7 @@ import { emit } from "../lib/metrics";
 import { getState, readOnlyReason, setReadOnly, setState } from "../lib/platform";
 
 /**
- * Budget kill switch (BUILD_PLAN section 13). Workers Paid has no spending cap, so every 15
+ * Budget kill switch. Workers Paid has no spending cap, so every 15
  * minutes this reads the account's usage for the month so far, projects the month-end bill,
  * and acts on it:
  *

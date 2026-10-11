@@ -1,5 +1,5 @@
 /**
- * Safety classifier (BUILD_PLAN section 10). Runs on Workers AI from the queue consumer, only
+ * Safety classifier. Runs on Workers AI from the queue consumer, only
  * for items the inline scan flagged. The item text is passed to the model as content to be
  * judged; the model's reply is reduced to one of three verdicts and nothing else is used.
  */

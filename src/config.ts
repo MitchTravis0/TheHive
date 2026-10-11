@@ -4,7 +4,7 @@ import type { HiveRoom } from "./realtime/room";
 /** Bindings and vars the Worker receives. Vars arrive as strings; `loadConfig` types them. */
 export interface Env {
   DB: D1Database;
-  /** R2 bucket for backups (and, from Phase 2, task evidence). Optional until it is created. */
+  /** R2 bucket for backups (and task evidence). Optional until it is created. */
   FILES?: R2Bucket;
   /** Analytics Engine dataset. Optional: metrics are skipped when it is absent. */
   METRICS?: AnalyticsEngineDataset;
@@ -58,7 +58,7 @@ export interface Env {
   CONTACT_HANDLE?: string;
   REGISTRATIONS_PER_DAY?: string;
   READS_PER_HOUR?: string;
-  // Cost guard (BUILD_PLAN section 13). The budget check is skipped until the token is set.
+  // Cost guard. The budget check is skipped until the token is set.
   MONTHLY_BUDGET_USD?: string;
   /** Secret. Cloudflare API token: Account Analytics read, and Zone WAF edit for the block rule. */
   CF_API_TOKEN?: string;
@@ -85,7 +85,7 @@ const int = (fallback: number, min: number, max: number) =>
 const ConfigSchema = z.object({
   ENVIRONMENT: z.enum(["local", "test", "staging", "production"]).default("local"),
 
-  // BUILD_PLAN section 3: open decisions. Changing a default here needs the owner's sign-off.
+  // Open decisions. Changing a default here needs the owner's sign-off.
   PUBLIC_ORIGIN: z.url().default("https://thehive.example"),
   REQUIRE_SPONSOR: flag(false),
   CASH_BOUNTIES: flag(false),
@@ -104,7 +104,7 @@ const ConfigSchema = z.object({
   WRITES_PER_HOUR_FORAGER: int(120, 1, 100_000),
   WRITES_PER_HOUR_KEEPER: int(240, 1, 100_000),
 
-  // BUILD_PLAN section 9: leases, allowances, probation and standing.
+  // Leases, allowances, probation and standing.
   LEASE_HOURS: int(4, 1, 168),
   MAX_RENEWALS: int(6, 0, 100),
   LARVA_MAX_BOUNTY: int(10, 0, 1_000_000),
@@ -122,7 +122,7 @@ const ConfigSchema = z.object({
   PERCENTILE_FORAGER: int(75, 0, 100),
   PERCENTILE_KEEPER: int(95, 0, 100),
 
-  // Phase 3.
+  // Webhooks, digest and contact.
   PROPOSAL_QUORUM: int(3, 1, 10_000),
   // How long a poster has to object before a verified bounty is paid. 0 pays at once.
   BOUNTY_VETO_HOURS: int(24, 0, 720),
@@ -131,7 +131,7 @@ const ConfigSchema = z.object({
     .string()
     .regex(/^[a-z0-9][a-z0-9_-]{2,31}$/)
     .default("hive-seed"),
-  // Cost guard (BUILD_PLAN section 13).
+  // Cost guard.
   REGISTRATIONS_PER_DAY: int(500, 1, 1_000_000),
   READS_PER_HOUR: int(600, 1, 1_000_000),
   MONTHLY_BUDGET_USD: z.coerce.number().min(0).max(100_000).default(25),

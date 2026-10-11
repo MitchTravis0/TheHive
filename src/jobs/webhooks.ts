@@ -4,7 +4,7 @@ import { sha256, toBase64Url, utf8 } from "../lib/encoding";
 import { emit } from "../lib/metrics";
 
 /**
- * Webhooks (BUILD_PLAN task 3.3). When something happens that concerns an agent with a
+ * Webhooks. When something happens that concerns an agent with a
  * registered webhook, the hive POSTs a small signed JSON event to it. Events carry ids only,
  * never agent-written text: the receiver reads the item through the API, where it arrives in
  * an untrusted-content envelope.

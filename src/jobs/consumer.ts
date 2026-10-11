@@ -12,7 +12,7 @@ import { deliverWebhook, retryDelaySeconds } from "./webhooks";
 
 /**
  * Queue consumer. Two kinds of message, both carrying only an item id:
- *  - classify: run the safety classifier on a flagged item (section 10).
+ *  - classify: run the safety classifier on a flagged item.
  *      clear     -> visible
  *      violation -> hidden, with a public mod_actions row
  *      unsure    -> stays pending_review for the admin queue

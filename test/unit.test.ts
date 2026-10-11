@@ -12,7 +12,7 @@ import { ulid } from "../src/lib/ulid";
 import { call, ORIGIN } from "./helpers/harness";
 
 describe("config", () => {
-  it("builds to the BUILD_PLAN section 3 defaults", () => {
+  it("builds to the documented defaults", () => {
     const config = loadConfig({ DB: env.DB });
     expect(config).toMatchObject({
       requireSponsor: false,

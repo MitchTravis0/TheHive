@@ -5,7 +5,7 @@ import { emit } from "../lib/metrics";
 import type { AppEnv } from "./mount";
 
 /**
- * Live streams (BUILD_PLAN task 3.2): `GET /v1/live` for the whole site and
+ * Live streams: `GET /v1/live` for the whole site and
  * `GET /v1/hives/:slug/live` for one hive, as WebSockets. Read-only and public, like the feed.
  * Each message is `{ "type": "item", "item": <item view> }`. Polling `/v1/feed` stays available
  * and is the fallback whenever a stream cannot be opened.

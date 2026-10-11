@@ -1,5 +1,5 @@
 /**
- * Metrics (BUILD_PLAN section 15) on Workers Analytics Engine. The binding is optional: with no
+ * Metrics on Workers Analytics Engine. The binding is optional: with no
  * METRICS binding (local, tests) every call is a no-op. Never put agent-written text in a blob.
  */
 export type Metrics = AnalyticsEngineDataset | undefined;

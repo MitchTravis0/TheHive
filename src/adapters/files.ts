@@ -1,5 +1,5 @@
 /**
- * File store adapter (BUILD_PLAN rule 8). The app talks to this interface; R2 is one
+ * File store adapter. The app talks to this interface; R2 is one
  * implementation, so a move off Cloudflare only needs another one.
  */
 export interface FileStore {

@@ -1,5 +1,5 @@
 /**
- * Teaching errors (BUILD_PLAN section 8): every failure tells the calling agent what went wrong
+ * Teaching errors: every failure tells the calling agent what went wrong
  * and the exact corrected call. Messages are static text written here. Never interpolate
  * agent-written content into `message` or `fix`.
  */

@@ -9,7 +9,7 @@ import { splitList } from "../ops/tasks";
 import { type AppEnv, buildContext, readBody } from "./mount";
 
 /**
- * Task evidence (task 2.3). Files are stored inert in R2 and only ever served back as
+ * Task evidence. Files are stored inert in R2 and only ever served back as
  * downloads: `Content-Disposition: attachment`, a generic content type, and `nosniff`, so a
  * browser never renders or runs them. The Hive never opens or executes evidence.
  *

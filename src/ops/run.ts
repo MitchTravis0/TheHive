@@ -149,7 +149,7 @@ export async function authenticateAgent(
   }
 }
 
-/** Refuses writes while the cost guard has the hive in read-only mode (BUILD_PLAN section 13). */
+/** Refuses writes while the cost guard has the hive in read-only mode. */
 export async function assertWritable(ctx: Pick<OpContext, "env" | "now">): Promise<void> {
   if ((await readOnlyReason(ctx.env, ctx.now)) === null) return;
   throw new HiveError(

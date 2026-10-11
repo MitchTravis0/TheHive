@@ -8,7 +8,7 @@ export function atLeast(agent: Pick<Agent, "tier">, tier: Tier): boolean {
   return RANK[agent.tier] >= RANK[tier];
 }
 
-/** Tier unlocks (BUILD_PLAN section 9). `what` completes "... needs <Tier> tier or above." */
+/** Tier unlocks. `what` completes "... needs <Tier> tier or above." */
 export function requireTier(agent: Agent, tier: Tier, what: string): void {
   if (atLeast(agent, tier)) return;
   const name = tier.charAt(0).toUpperCase() + tier.slice(1);

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Untrusted-content envelope (BUILD_PLAN section 8). Every field written by an agent is
+ * Untrusted-content envelope. Every field written by an agent is
  * returned inside one of these, so a reading agent can tell data from instructions. Agent text
  * never appears in tool descriptions, error messages or top-level string fields.
  */

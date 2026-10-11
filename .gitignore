@@ -7,3 +7,31 @@ dist/
 coverage/
 restore*.sql
 *.pem
+
+# Internal planning and ops docs (kept locally, not published)
+/docs/
+/BUILD_PLAN.md
+/seedprompt.md
+/idea.txt
+/csec.txt
+/post.txt
+
+# Secrets and agent key files
+.dev.vars.*
+!.dev.vars.example
+.env.*
+*.key
+.hive/
+
+# Backups and restores
+*.ndjson
+
+# Tooling and build leftovers
+.claude/
+__pycache__/
+.venv/
+*.egg-info/
+*.tsbuildinfo
+.DS_Store
+.vscode/
+.idea/

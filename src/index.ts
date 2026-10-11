@@ -69,7 +69,7 @@ export async function runScheduled(
 export default {
   fetch(request, env, ctx) {
     // The admin hostname serves the admin handlers and nothing else; the public hostnames never
-    // reach them (BUILD_PLAN rule 6).
+    // reach them.
     if (env.ADMIN_HOSTNAME && new URL(request.url).hostname === env.ADMIN_HOSTNAME) {
       return admin.fetch(request, env, ctx);
     }
@@ -77,7 +77,7 @@ export default {
   },
   async scheduled(controller, env) {
     // Real triggers always carry the configured cron. A local test-scheduled session can pass
-    // cron=hourly or cron=daily to run those jobs by hand (docs/backup.md).
+    // cron=hourly or cron=daily to run those jobs by hand.
     const force =
       controller.cron === "hourly" || controller.cron === "daily" ? controller.cron : undefined;
     await runScheduled(env, controller.scheduledTime, force);

@@ -5,7 +5,7 @@ import { HiveError } from "../errors";
 import { ulid } from "../lib/ulid";
 
 /**
- * Moderation actions (BUILD_PLAN section 10). An admin can remove, quarantine, freeze and undo
+ * Moderation actions. An admin can remove, quarantine, freeze and undo
  * those; there is deliberately no action that creates or edits content. Every action writes a
  * `mod_actions` row in the same transaction, and that table is public at /moderation.
  */

@@ -21,7 +21,7 @@
       "migrations_dir": "migrations",
     },
   ],
-  // Live rooms (BUILD_PLAN 3.2): one Durable Object per hive, plus one for the whole site.
+  // Live rooms: one Durable Object per hive, plus one for the whole site.
   "durable_objects": { "bindings": [{ "name": "HIVE_ROOM", "class_name": "HiveRoom" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HiveRoom"] }],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "the-hive-local-files" }],
@@ -52,7 +52,7 @@
       "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HiveRoom"] }],
       "r2_buckets": [{ "binding": "FILES", "bucket_name": "the-hive-staging-files" }],
       "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "the_hive_staging" }],
-      // Background work: safety classifier and search embeddings (BUILD_PLAN 2.8, 2.10).
+      // Background work: safety classifier and search embeddings.
       "queues": {
         "producers": [{ "binding": "QUEUE", "queue": "the-hive-staging-jobs" }],
         "consumers": [
@@ -119,7 +119,7 @@
         "ADMIN_HOSTNAME": "admin.agentic-hive.us",
         "ACCESS_TEAM_DOMAIN": "misty-breeze-bae7.cloudflareaccess.com",
         "ACCESS_AUD": "06befe78b44e6a270082608cbb6881f5f8553aee8758cf81f37d73679e015b97",
-        // Cost guard (docs/cost-guard.md). The API token is the secret CF_API_TOKEN.
+        // Cost guard. The API token is the secret CF_API_TOKEN.
         "CF_ACCOUNT_ID": "6ef9254186a0762b36c9d2dd4ba61074",
         // The token may edit WAF rules on the zone but cannot look zones up by name.
         "CF_ZONE_ID": "190ae36074e824c34c9458c56af53cfc",

@@ -57,8 +57,8 @@ export interface PreparedItem {
 }
 
 /**
- * Everything that happens to agent-written content before it is stored (BUILD_PLAN section
- * 10): hive and parent checks, the safety scan, the duplicate check, and mention lookup.
+ * Everything that happens to agent-written content before it is stored:
+ * hive and parent checks, the safety scan, the duplicate check, and mention lookup.
  * Nothing is written here; the caller runs the returned statements.
  */
 export async function prepareItem(
@@ -153,7 +153,7 @@ export async function prepareItem(
     );
   }
 
-  // Flagged content waits for the classifier when one is configured (section 10, step 5).
+  // Flagged content waits for the classifier when one is configured.
   const review = scanned.flags.length > 0 && canClassify(ctx.env);
   const status = review ? ("pending_review" as const) : ("visible" as const);
   const id = ulid(now);

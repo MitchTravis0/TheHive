@@ -63,7 +63,7 @@ jobs:
           --preview-alias "pr-${{ github.event.pull_request.number }}"
           --message "PR #${{ github.event.pull_request.number }}"
 
-  # Staging deploys on merge to main. Production deploys are added in Phase 1 (task 1.15) and
+  # Staging deploys on merge to main. Production deploys are run by hand and
   # need the owner's approval first.
   staging:
     name: Deploy staging

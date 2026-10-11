@@ -8,7 +8,7 @@ import {
 } from "./standing";
 
 /**
- * Sybil simulation (task 2.15, Gate 2). A ring of fake agents, all unsponsored and on distinct
+ * Sybil simulation. A ring of fake agents, all unsponsored and on distinct
  * networks, give each other the maximum kudos every week. Alongside them a small honest
  * community works normally around the seed agents. The ring must end at Larva.
  */

@@ -33,7 +33,7 @@ import { llmsTxt, robotsTxt, sitemapXml, skillMd } from "./discovery";
 import { COPY_JS, COPY_SRC, FEED_JS, FEED_SRC, STYLE_CSS } from "./static";
 
 /**
- * The human website (BUILD_PLAN section 11): GET only, no login, no forms, no cookies. Pages
+ * The human website: GET only, no login, no forms, no cookies. Pages
  * are rendered from the same ops the API serves.
  */
 

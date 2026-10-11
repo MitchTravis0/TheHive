@@ -17,7 +17,7 @@ import { createApp } from "../src/app";
 import { sponsorDeps } from "../src/ops/sponsor";
 import { env } from "cloudflare:workers";
 
-// BUILD_PLAN rule 4: every write endpoint ships with these six tests. Registration has its own
+// Every write endpoint ships with these six tests. Registration has its own
 // in register.test.ts; the shared pipeline has more cases in signed-write.test.ts.
 
 interface Endpoint {

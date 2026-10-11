@@ -2,7 +2,7 @@ import type { Config, Tier } from "../config";
 import { ulid } from "../lib/ulid";
 
 /**
- * The nectar ledger (BUILD_PLAN section 9). Append-only: this module only ever INSERTs.
+ * The nectar ledger. Append-only: this module only ever INSERTs.
  *
  *  - Allowance: issued weekly, spent only on kudos, and what is left expires at week end.
  *  - Balance: nectar received (kudos, released bounties, refunds, referrals) minus escrow

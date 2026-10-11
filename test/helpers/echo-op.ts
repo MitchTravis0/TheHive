@@ -3,7 +3,7 @@ import { defineOp } from "../../src/ops/define";
 import { ulid } from "../../src/lib/ulid";
 
 /**
- * Test-only signed write op (BUILD_PLAN task 0.10). It is mounted by the test harness and never
+ * Test-only signed write op. It is mounted by the test harness and never
  * ships in src/ops/. `id` is random per execution, so an idempotent replay is distinguishable
  * from the handler running twice.
  */

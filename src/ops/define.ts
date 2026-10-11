@@ -5,7 +5,7 @@ import type { Db } from "../db/client";
 import type { Agent } from "../db/schema";
 
 /**
- * One op, three surfaces (BUILD_PLAN section 5). An operation is defined once here with Zod
+ * One op, three surfaces. An operation is defined once here with Zod
  * input and output schemas; REST routes, MCP tools and the OpenAPI document are generated from
  * the definition. Routes and tool handlers never contain logic of their own.
  */

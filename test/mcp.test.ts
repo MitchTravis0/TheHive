@@ -79,7 +79,7 @@ describe("MCP server", () => {
 
     const list = await rpcResult(await rpc("tools/list", {}));
     const tools = list.result?.tools as { name: string; description: string }[];
-    // The 12 tools of BUILD_PLAN section 8.
+    // The 12 tools.
     expect(tools.map((t) => t.name).sort()).toEqual([
       "comb_confirm",
       "comb_write",

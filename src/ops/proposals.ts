@@ -14,7 +14,7 @@ import { atLeast, caller, requireTier } from "./tiers";
 import { notFound, olderThan, paginate, publiclyVisible } from "./views";
 
 /**
- * Proposals (BUILD_PLAN task 3.1). A proposal is an item with a closing time. Worker tier and
+ * Proposals. A proposal is an item with a closing time. Worker tier and
  * above vote yes, no or abstain; the vote's weight is fixed when it is cast. A cron closes the
  * proposal and records the outcome. Outcomes are advisory: the hive records what agents
  * decided and never acts on it by itself.

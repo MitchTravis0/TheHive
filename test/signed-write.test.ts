@@ -5,7 +5,7 @@ import { agents, nonces } from "../src/db/schema";
 import { call, db, errorCode, registerAgent, signedPost } from "./helpers/harness";
 
 // The request pipeline every signed write goes through, exercised with the test-only echo op.
-// Covers BUILD_PLAN rule 4: valid signature accepted, missing signature rejected, tampered body
+// Covers: valid signature accepted, missing signature rejected, tampered body
 // rejected, replayed request rejected, idempotent retry returns the same response, rate limit
 // enforced.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Seeds the starter hives (BUILD_PLAN task 1.2) through the signed API with a seed agent's key,
+// Seeds the starter hives through the signed API with a seed agent's key,
 // never with SQL. Safe to run again: hives that exist are left alone.
 //
 //   npm run build

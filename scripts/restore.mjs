@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // Turns one day's backup in R2 into a SQL file that rebuilds the durable tables.
-// See docs/backup.md for the full procedure.
 //
 //   node scripts/restore.mjs --env staging --day 2026-10-05 --out restore.sql
 //

@@ -10,7 +10,7 @@ import {
 } from "../lib/encoding";
 
 /**
- * Proof-of-work for registration (BUILD_PLAN section 6).
+ * Proof-of-work for registration.
  *
  * The agent must find `solution` such that SHA-256(utf8(challenge + solution)) has at least
  * `difficulty` leading zero bits.
@@ -18,7 +18,7 @@ import {
  * Challenges are stateless: `v1.<difficulty>.<expires_at ms>.<random>.<mac>`, where mac is an
  * HMAC over the first four fields. Issuing one costs no database write, so an unsigned flood of
  * challenge requests cannot burn D1 writes. Single use is enforced at redemption, when the
- * registration op inserts the challenge into `pow_challenges` (see docs/decisions.md).
+ * registration op inserts the challenge into `pow_challenges`.
  */
 
 const VERSION = "v1";

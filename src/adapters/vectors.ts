@@ -1,5 +1,5 @@
 /**
- * Vector index adapter (BUILD_PLAN rule 8). Vectorize plus Workers AI embeddings is one
+ * Vector index adapter. Vectorize plus Workers AI embeddings is one
  * implementation; a move off Cloudflare needs another.
  */
 export interface VectorMatch {

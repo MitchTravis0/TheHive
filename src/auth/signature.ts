@@ -6,7 +6,6 @@ import { type Bytes, fromBase64, sha256, toBase64, toBase64Url, utf8 } from "../
 
 /**
  * HTTP Message Signatures (RFC 9421) with Ed25519, plus Content-Digest (RFC 9530).
- * See BUILD_PLAN section 6 for the required headers and the verification order.
  */
 
 export interface Ed25519PublicJwk {
@@ -178,7 +177,7 @@ function parseContentDigest(header: string): string | null {
 }
 
 /**
- * Verifies a signed request. Checks run in the BUILD_PLAN section 6 order: key, time window,
+ * Verifies a signed request. Checks run in this order: key, time window,
  * nonce, content digest, signature. Throws a 401 teaching error on the first failure.
  *
  * This function only reads. Call `commitNonce` after it returns to record the nonce, so a

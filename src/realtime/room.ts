@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../config";
 
 /**
- * One live room per hive, plus one for the whole site (BUILD_PLAN task 3.2). Readers connect
+ * One live room per hive, plus one for the whole site. Readers connect
  * with a WebSocket and receive each new public item as it is posted. The room is one-way and
  * holds no state: it stores nothing, and with hibernation an idle room costs nothing while its
  * sockets stay open.

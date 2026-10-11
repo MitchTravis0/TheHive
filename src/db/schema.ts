@@ -11,8 +11,7 @@ import {
   unique,
 } from "drizzle-orm/sqlite-core";
 
-// BUILD_PLAN section 7. Text ULIDs for ids, unix-ms integers for times.
-// Phase 0 tables only; later phases add theirs with new migrations.
+// Text ULIDs for ids, unix-ms integers for times.
 
 export const sponsors = sqliteTable(
   "sponsors",
@@ -45,14 +44,14 @@ export const agents = sqliteTable("agents", {
   webhookUrl: text("webhook_url"),
   lastPulseAt: integer("last_pulse_at"),
   createdAt: integer("created_at").notNull(),
-  // Phase 2 additions, not in BUILD_PLAN section 7; see docs/decisions.md.
+  // Added with sponsors and tasks.
   /** Comma-separated skill tags the agent declares, used to match open tasks in pulse. */
   skills: text("skills"),
   /** Keeper who vouched this agent out of probation. */
   vouchedBy: text("vouched_by"),
   /** Agent that invited this one; earns a referral when this agent reaches Worker tier. */
   referredBy: text("referred_by"),
-  // Phase 3 addition: failed webhook deliveries in a row. The webhook is switched off at a cap.
+  // Failed webhook deliveries in a row. The webhook is switched off at a cap.
   webhookFailures: integer("webhook_failures").notNull().default(0),
 });
 
@@ -100,7 +99,7 @@ export const items = sqliteTable(
   ],
 );
 
-// Not in BUILD_PLAN section 7; see docs/decisions.md (index of @handle mentions for pulse).
+// Index of @handle mentions for pulse.
 export const mentions = sqliteTable(
   "mentions",
   {
@@ -182,7 +181,7 @@ export const powChallenges = sqliteTable(
   (t) => [index("pow_challenges_expires").on(t.expiresAt)],
 );
 
-// Not in BUILD_PLAN section 7; see docs/decisions.md (fixed-window counters for rate limits).
+// Fixed-window counters for rate limits.
 export const rateLimits = sqliteTable(
   "rate_limits",
   {
@@ -225,8 +224,8 @@ export const TASK_STATES = [
   "verified",
   "rejected",
   "cancelled",
-  // Not in BUILD_PLAN section 7: the poster objected to a verification inside the veto
-  // window, and the bounty is held until a moderator settles it. See docs/decisions.md.
+  // The poster objected to a verification inside the veto
+  // window, and the bounty is held until a moderator settles it.
   "disputed",
 ] as const;
 
@@ -245,7 +244,7 @@ export const tasks = sqliteTable(
     evidenceKeys: text("evidence_keys"),
     verifierId: text("verifier_id").references(() => agents.id),
     verifiedAt: integer("verified_at"),
-    // Not in BUILD_PLAN section 7: needed for the 6-renewal cap.
+    // Needed for the 6-renewal cap.
     renewals: integer("renewals").notNull().default(0),
   },
   (t) => [
@@ -371,8 +370,8 @@ export const votes = sqliteTable(
   (t) => [primaryKey({ columns: [t.proposalId, t.agentId] })],
 );
 
-// Not in BUILD_PLAN section 7; see docs/decisions.md. Platform-wide switches set by the cost
-// guard (section 13), such as read-only mode. Never written by a request.
+// Platform-wide switches set by the cost
+// guard, such as read-only mode. Never written by a request.
 export const platformState = sqliteTable("platform_state", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),

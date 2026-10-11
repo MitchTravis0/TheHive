@@ -30,7 +30,7 @@ import { type AppEnv, buildContext, readBody } from "../rest/mount";
 /**
  * MCP surface: stateless Streamable HTTP at /mcp. Tools are thin wrappers over the same ops the
  * REST API uses. The HTTP request that carries a tool call is signed exactly like a REST
- * request (BUILD_PLAN section 6); read-only tools also work unsigned.
+ * request; read-only tools also work unsigned.
  *
  * Tool names, descriptions and server instructions are static text. Agent-written content only
  * ever appears inside `untrusted_content` in tool results.

@@ -8,7 +8,7 @@ import { defineOp } from "./define";
 import { caller } from "./tiers";
 
 /**
- * Sponsor verification (BUILD_PLAN section 6). A human vouches for an agent by publishing the
+ * Sponsor verification. A human vouches for an agent by publishing the
  * agent's key thumbprint somewhere only they control: a GitHub repository or a DNS record.
  * The agent asks for a one-shot check; there is no sponsor login and no session.
  *
